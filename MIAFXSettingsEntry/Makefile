@@ -15,9 +15,9 @@ MIAFXSettingsEntry_FILES = \
 	../Shared/MIAFXSafe.m \
 	../Shared/MIAFXIPC.c
 MIAFXSettingsEntry_FRAMEWORKS = UIKit Foundation QuartzCore CoreGraphics AVFoundation UniformTypeIdentifiers
-MIAFXSettingsEntry_PRIVATE_FRAMEWORKS = Preferences
 MIAFXSettingsEntry_CFLAGS = -fobjc-arc -Wall -I../Shared
+MIAFXSettingsEntry_LIBRARIES = roothide
+MIAFXSettingsEntry_LDFLAGS = -undefined dynamic_lookup
 MIAFXSettingsEntry_INSTALL_PATH = /Library/PreferenceBundles
-MIAFXSettingsEntry_LDFLAGS = -L$(THEOS)/lib/iphone/roothide -lroothide
 
 include $(THEOS_MAKE_PATH)/bundle.mk
