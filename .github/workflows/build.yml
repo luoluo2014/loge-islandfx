@@ -19,7 +19,7 @@ jobs:
 
       - name: 编译打包
         run: |
-          export THEOS=/opt/theos
+          export THEOS="$HOME/theos"
           export PATH="$THEOS/bin:$PATH"
           command -v ldid >/dev/null 2>&1 || brew install ldid || true
           make clean
