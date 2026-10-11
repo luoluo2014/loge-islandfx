@@ -23,7 +23,7 @@ jobs:
           export PATH="$THEOS/bin:$PATH"
           command -v ldid >/dev/null 2>&1 || brew install ldid || true
           make clean
-          make package THEOS_PACKAGE_SCHEME=roothide
+          make package THEOS_PACKAGE_SCHEME=roothide FINALPACKAGE=1
 
       - name: 产物清单
         run: |
