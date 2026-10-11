@@ -1,0 +1,4 @@
+#!/bin/sh
+uicache -a >/dev/null 2>&1 || true
+killall Preferences >/dev/null 2>&1 || true
+exit 0

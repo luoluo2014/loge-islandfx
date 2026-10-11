@@ -1,0 +1,14 @@
+# Theos 构建产物
+packages/
+.theos/
+obj/
+*.deb
+
+# 测试可执行文件
+tests/logeisland-tests
+
+# macOS
+.DS_Store
+
+# Xcode
+xcuserdata/
