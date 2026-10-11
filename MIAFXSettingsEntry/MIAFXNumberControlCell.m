@@ -78,6 +78,8 @@ static const NSInteger kMIAFXRepeatAccelerateAt = 12;        // 重复多少次�
 
     _minusButton = [self stepButtonWithTitle:@"－" action:@selector(stepTouchDown:)];
     _plusButton = [self stepButtonWithTitle:@"＋" action:@selector(stepTouchDown:)];
+    [self.contentView addSubview:_minusButton];
+    [self.contentView addSubview:_plusButton];
 
     _numberField = [[UITextField alloc] initWithFrame:CGRectZero];
     _numberField.borderStyle = UITextBorderStyleRoundedRect;
