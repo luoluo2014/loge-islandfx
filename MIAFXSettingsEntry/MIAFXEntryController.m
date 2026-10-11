@@ -20,8 +20,19 @@
 
 @implementation MIAFXEntryController
 
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        self.title = @"落格Loge·灵动岛";
+    }
+    return self;
+}
+
 - (instancetype)initForContentSize:(CGSize)contentSize {
-    self = [super initForContentSize:contentSize];
+    (void)contentSize;
+    // iOS 14 之后 PSViewController 已移除 initForContentSize:，PreferenceLoader 仍会
+    // 用这个入口实例化，因此这里实现它、但底层走标准 init，避免 unrecognized selector。
+    self = [super init];
     if (self) {
         self.title = @"落格Loge·灵动岛";
     }
