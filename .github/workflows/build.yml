@@ -37,6 +37,12 @@ jobs:
         run: |
           export THEOS="$HOME/theos"
           export PATH="$THEOS/bin:$PATH"
+          # theos 的 patched SDK 不含私有框架 Preferences 的 .tbd，链接时 -framework Preferences 会报
+          # "framework not found Preferences"。把仓库里 vendor 的 tbd 复制进 SDK。
+          SDKDIR=$(ls -d "$THEOS"/sdks/iPhoneOS*.sdk 2>/dev/null | head -1)
+          echo "SDK 目录: $SDKDIR"
+          mkdir -p "$SDKDIR/System/Library/PrivateFrameworks/Preferences.framework"
+          cp vendor/Preferences.framework/Preferences.tbd "$SDKDIR/System/Library/PrivateFrameworks/Preferences.framework/"
           command -v ldid >/dev/null 2>&1 || brew install ldid || true
           make clean
           make package THEOS_PACKAGE_SCHEME=roothide FINALPACKAGE=1
