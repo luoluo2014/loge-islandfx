@@ -5,7 +5,7 @@
 
 #define MIAFX_PACKAGE_ID "com.loge.islandfx"
 /// 插件版本号：发版时与 control / MIAFXSettingsEntry/Info.plist 保持同步（dylib 无独立 Info.plist）
-#define MIAFX_PLUGIN_VERSION_STRING @"1.4.1"
+#define MIAFX_PLUGIN_VERSION_STRING @"1.4.2"
 #define MIAFX_NOTIFY_RELOAD "com.loge.islandfx.reload"
 #define MIAFX_NOTIFY_FEATURE_STATE "com.loge.islandfx.feature-state"
 #define MIAFX_NOTIFY_RESCAN "com.loge.islandfx.rescan"

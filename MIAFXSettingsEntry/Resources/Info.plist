@@ -7,8 +7,8 @@
     <key>CFBundleExecutable</key><string>MIAFXSettingsEntry</string>
     <key>CFBundleName</key><string>MIAFXSettingsEntry</string>
     <key>CFBundlePackageType</key><string>BNDL</string>
-    <key>CFBundleShortVersionString</key><string>1.4.1</string>
-    <key>CFBundleVersion</key><string>2</string>
+    <key>CFBundleShortVersionString</key><string>1.4.2</string>
+    <key>CFBundleVersion</key><string>3</string>
     <key>NSPrincipalClass</key><string>MIAFXEntryController</string>
 </dict>
 </plist>

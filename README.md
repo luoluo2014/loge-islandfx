@@ -3,7 +3,7 @@
 > 落格出品 · 每一个插件都有他的灵魂
 
 > 目标环境：iOS 17.1 · Relaxin（RootHide 隐根）· arm64e
-> 包名：`com.loge.islandfx` · 版本：`1.4.1`
+> 包名：`com.loge.islandfx` · 版本：`1.4.2`
 
 「落格Loge·灵动岛」（工程代号 MIAFX）是一套按「防卡死 + 省电优先」设计的灵动岛改造插件：
 视频底色、10 种呼吸动效、双层流光跑马灯、19 种轨迹素材、液态粘连（Metaball）、
@@ -49,7 +49,7 @@ MIAFX/
 
 把本仓库推到 GitHub 即自动编译：
 - push 到 `main`/`master` → 构建产物上传到 Actions 的 Artifacts；
-- push `v*` 标签（如 `v1.4.1`）→ 自动创建 GitHub Release 并附上 deb。
+- push `v*` 标签（如 `v1.4.2`）→ 自动创建 GitHub Release 并附上 deb。
 
 ### 方式 B：macOS 本地编译
 
@@ -65,7 +65,7 @@ make package THEOS_PACKAGE_SCHEME=roothide
 ## 安装
 
 ```sh
-dpkg -i com.loge.islandfx_1.4.1_iphoneos-arm64e.deb
+dpkg -i com.loge.islandfx_1.4.2_iphoneos-arm64e.deb
 uicache -a; sbreload
 ```
 
@@ -95,6 +95,14 @@ RootHide 下设置 App 与 SpringBoard 的 `jbroot()` 指向两个不同的文�
 
 `Global.PerformanceTier`（0 节能 / 1 均衡 / 2 华丽）与 `Global.MaxFPS` 联动降级；
 息屏 / AOD / 岛隐藏时全部特效停摆以省电。
+
+---
+
+## 1.4.2 修订记录（安装卡死）
+
+| 现象 | 根因 | 处理 |
+| --- | --- | --- |
+| Sileo/Zebra 安装时进度卡死不动 | `postinst` 里 `( sleep 2; sbreload ) &` 的后台子 shell **继承了 dpkg 的输出管道**；前端要等所有管道写端关闭才认为安装结束，respring 一卡安装就永远转圈 | 后台任务全量重定向标准流（`</dev/null >/dev/null 2>&1`）并延后到 4 秒；`sbreload` 不可用时兜底 `killall -9 SpringBoard` |
 
 ---
 
