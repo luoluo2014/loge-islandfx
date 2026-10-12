@@ -919,6 +919,9 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
         [sheet addAction:[UIAlertAction actionWithTitle:@"从相册添加视频" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
             [weakSelf presentPhotoPickerForSpec:spec];
         }]];
+        [sheet addAction:[UIAlertAction actionWithTitle:@"从素材目录选择" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            [weakSelf presentVideoDirectoryPickerForSpec:spec];
+        }]];
     }
     [sheet addAction:[UIAlertAction actionWithTitle:@"手动输入路径" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         [weakSelf presentPathEditorForSpec:spec];
@@ -1299,6 +1302,53 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
 
 - (BOOL)specSupportsPhotoImport:(MIAFXSettingSpec *)spec {
     return [spec.key isEqualToString:@"Compact.Video.Path"] || [spec.key isEqualToString:@"Expanded.Video.Path"];
+}
+
+/// 列出 Videos 目录里已有的视频文件，点选直接设为背景
+- (void)presentVideoDirectoryPickerForSpec:(MIAFXSettingSpec *)spec {
+    NSString *directory = [[MIAFXFilzaLauncher sharedLauncher] videosDirectory];
+    NSArray<NSString *> *videos = [self videoFilesInDirectory:directory];
+    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"选择视频素材"
+                                                                  message:[NSString stringWithFormat:@"Videos 目录（%lu 个视频）", (unsigned long)videos.count]
+                                                           preferredStyle:UIAlertControllerStyleActionSheet];
+    __weak typeof(self) weakSelf = self;
+    if (videos.count == 0) {
+        [sheet addAction:[UIAlertAction actionWithTitle:@"目录里还没有视频 → 去相册导入" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            [weakSelf presentPhotoPickerForSpec:spec];
+        }]];
+    } else {
+        for (NSString *path in videos) {
+            NSString *name = path.lastPathComponent;
+            BOOL current = [path isEqualToString:[weakSelf specCurrentString:spec]];
+            NSString *title = current ? [name stringByAppendingString:@"  ✓"] : name;
+            [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+                [[MIAFXSettingsCatalog sharedCatalog] stageObject:path forSpec:spec];
+                [weakSelf commitAndRefresh];
+            }]];
+        }
+    }
+    [sheet addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    if (sheet.popoverPresentationController) {
+        sheet.popoverPresentationController.sourceView = self.view;
+        sheet.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds), 1.0, 1.0);
+    }
+    [self presentViewController:sheet animated:YES completion:nil];
+}
+
+- (NSArray<NSString *> *)videoFilesInDirectory:(NSString *)directory {
+    NSFileManager *manager = [NSFileManager defaultManager];
+    NSArray<NSString *> *items = [manager contentsOfDirectoryAtPath:directory error:nil];
+    NSSet<NSString *> *extensions = [NSSet setWithArray:@[@"mp4", @"mov", @"m4v", @"mpg", @"mpeg", @"3gp", @"avi", @"mkv", @"webm"]];
+    NSMutableArray<NSString *> *videos = [NSMutableArray array];
+    for (NSString *name in items) {
+        NSString *extension = name.pathExtension.lowercaseString;
+        if (extension.length == 0 || ![extensions containsObject:extension]) continue;
+        NSString *full = [directory stringByAppendingPathComponent:name];
+        BOOL isDirectory = NO;
+        if (![manager fileExistsAtPath:full isDirectory:&isDirectory] || isDirectory) continue;
+        [videos addObject:full];
+    }
+    return [videos sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)];
 }
 
 - (void)presentPhotoPickerForSpec:(MIAFXSettingSpec *)spec {
