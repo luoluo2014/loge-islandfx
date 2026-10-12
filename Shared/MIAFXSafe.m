@@ -13,15 +13,30 @@ static void MIAFXEnsureFailureState(void) {
     });
 }
 
+/// 启动保护：只识别真正的崩溃循环。
+/// 旧实现按累计次数拦截，一旦达到阈值，插件因不加载而永远无法标记稳定，
+/// 形成死锁（用户手动 respring 几次后插件被永久禁用）。
+/// 新实现：只统计最近 kMIAFXBootWindow 秒内的启动次数，达到阈值才拦截；
+/// 手动 respring（通常间隔远大于窗口）不会累积，崩溃循环（秒级重启）仍会被捕获。
+static const NSTimeInterval kMIAFXBootWindow = 300.0;
+static const NSInteger kMIAFXBootLoopThreshold = 4;
+
 BOOL MIAFXBeginBootGuard(void) {
     MIAFXEnsureDataDirectories(nil);
     NSMutableDictionary *state = [[NSDictionary dictionaryWithContentsOfFile:MIAFXPanicPath()] mutableCopy] ?: [NSMutableDictionary dictionary];
-    NSInteger attempts = [state[@"Attempts"] integerValue] + 1;
+    NSTimeInterval now = [[NSDate date] timeIntervalSince1970];
+    NSTimeInterval lastStart = [state[@"LastStart"] doubleValue];
+    NSInteger attempts = [state[@"Attempts"] integerValue];
+    if (lastStart <= 0.0 || (now - lastStart) > kMIAFXBootWindow) {
+        attempts = 1;   // 距上次启动太久：视为一次全新的正常启动
+    } else {
+        attempts += 1;
+    }
     state[@"Attempts"] = @(attempts);
-    state[@"LastStart"] = @([[NSDate date] timeIntervalSince1970]);
+    state[@"LastStart"] = @(now);
     [state writeToFile:MIAFXPanicPath() atomically:YES];
-    if (attempts >= 3) {
-        MIAFXLog(@"启动保护已触发：连续启动次数 %ld", (long)attempts);
+    if (attempts >= kMIAFXBootLoopThreshold) {
+        MIAFXLog(@"启动保护已触发：%ld 秒内连续启动 %ld 次，判定为崩溃循环", (long)kMIAFXBootWindow, (long)attempts);
         return NO;
     }
     return YES;

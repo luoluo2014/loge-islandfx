@@ -14,6 +14,11 @@ NSString *MIAFXPanicPath(void) { return [MIAFXPreferencesDirectory() stringByApp
 NSString *MIAFXDiagnosticsPath(void) { return [MIAFXPreferencesDirectory() stringByAppendingPathComponent:@"diagnostics.plist"]; }
 NSString *MIAFXLogPath(void) { return [MIAFXDataDirectory() stringByAppendingPathComponent:@"Logs/miafx.log"]; }
 NSString *MIAFXVideoDiagPath(void) { return [MIAFXDataDirectory() stringByAppendingPathComponent:@"Logs/video-diag.log"]; }
+NSString *MIAFXVideosDirectory(void) { return [MIAFXDataDirectory() stringByAppendingPathComponent:@"Videos"]; }
+NSString *MIAFXRealVideosDirectory(void) { return @"/var/jb/var/mobile/Library/LogeIsland/Videos"; }
+BOOL MIAFXIsSandboxContainerPath(NSString *path) {
+    return [path containsString:@"/.jbroot-"];
+}
 
 BOOL MIAFXEnsureDirectory(NSString *path, NSError **error) {
     if (path.length == 0) return NO;

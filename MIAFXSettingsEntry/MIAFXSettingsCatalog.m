@@ -426,11 +426,11 @@ static MIAFXSettingSection *MIASection(NSString *title, NSString * _Nullable foo
         MIAFXSettingPage *page = [[MIAFXSettingPage alloc] init];
         page.identifier = @"islandBackground";
         page.title = @"灵动岛背景";
-        page.pageDescription = @"把原生灵动岛的胶囊底色替换为自定义视频，紧凑与展开两种状态分别配置。";
+        page.pageDescription = @"把原生灵动岛的胶囊底色替换为自定义视频，紧凑与展开两种状态分别配置。导入的视频会由插件转存到真实素材目录，配置里只记文件名。";
         page.sections = @[
-            MIASection(@"紧凑", @"未展开状态下胶囊内播放的背景视频；素材放到 Videos 目录，建议 1~3 秒循环、带透明通道。", @[
+            MIASection(@"紧凑", @"未展开状态下胶囊内播放的背景视频；建议 1~3 秒循环、带透明通道。", @[
                 MIASwitchSpec(@"Compact.Video.Enabled", @"启用紧凑背景", @"单独控制紧凑状态视频层（同时需要全局「视频层」位开启）。"),
-                MIAPathSpec(@"Compact.Video.Path", @"背景视频", @"点击选择来源：可从相册添加、从「文件」选取，或在 Filza 中查看素材目录。"),
+                MIAPathSpec(@"Compact.Video.Path", @"背景视频", @"从相册添加、从「文件」选取，或从插件已收到的素材里选择。导入后由插件转存到真实素材目录。"),
                 MIAEnumSpec(@"Compact.Video.FillMode", @"填充模式", @"决定视频如何适配胶囊区域。", @[
                     MIAOpt(@"拉伸填满", @"拉伸到完整胶囊，可能变形。", @0),
                     MIAOpt(@"等比裁切", @"等比放大填满并裁切多余部分。", @1),
@@ -449,7 +449,7 @@ static MIAFXSettingSection *MIASection(NSString *title, NSString * _Nullable foo
             ]),
             MIASection(@"展开", @"长按展开状态下胶囊内播放的背景视频；展开区域更高，建议使用横向比例更大的素材。", @[
                 MIASwitchSpec(@"Expanded.Video.Enabled", @"启用展开背景", @"单独控制展开状态视频层（同时需要全局「视频层」位开启）。"),
-                MIAPathSpec(@"Expanded.Video.Path", @"背景视频", @"点击选择来源：可从相册添加、从「文件」选取，或在 Filza 中查看素材目录。"),
+                MIAPathSpec(@"Expanded.Video.Path", @"背景视频", @"从相册添加、从「文件」选取，或从插件已收到的素材里选择。导入后由插件转存到真实素材目录。"),
                 MIAEnumSpec(@"Expanded.Video.FillMode", @"填充模式", @"决定视频如何适配展开区域。", @[
                     MIAOpt(@"拉伸填满", @"拉伸到完整区域，可能变形。", @0),
                     MIAOpt(@"等比裁切", @"等比放大填满并裁切多余部分。", @1),
@@ -466,12 +466,12 @@ static MIAFXSettingSection *MIASection(NSString *title, NSString * _Nullable foo
                 ]),
                 MIADependent(MIANumberSpec(@"Expanded.Video.CornerRadius", @"自定义圆角半径", @"仅在圆角模式为「自定义半径」时生效。", 0.0, 80.0, 0.5, 1, @"pt"), @"Expanded.Video.CornerMode", @[@2]),
             ]),
-            MIASection(@"素材位置", @"", @[
-                MIAActionSpec(MIAFXActionFilzaVideos, @"在 Filza 中打开视频目录", @"跳转到 Videos 文件夹查看/管理已导入的素材。"),
+            MIASection(@"素材位置", @"插件（SpringBoard）只认真实 /var/jb 目录；设置 App 里的视频会经系统偏好暂存转存过去。", @[
+                MIAActionSpec(MIAFXActionFilzaVideos, @"在 Filza 中打开视频目录", @"跳转到真实 Videos 文件夹（/var/jb/var/mobile/Library/LogeIsland/Videos）查看/管理素材。"),
                 MIAActionSpec(MIAFXActionFilzaLogs, @"打开诊断日志目录", @"视频背景不生效时，进入 Logs 目录把 video-diag.log 发给作者定位问题。"),
             ]),
             MIASection(@"诊断反馈", @"视频背景异常时，一键生成诊断文件直接发给作者。", @[
-                MIAActionSpec(MIAFXActionShareDiagnostics, @"分享诊断日志", @"汇总运行日志、配置与素材清单为一个文件，通过微信/QQ/邮件直接发给作者。"),
+                MIAActionSpec(MIAFXActionShareDiagnostics, @"分享诊断日志", @"汇总运行日志、配置域、素材清单与待投递队列为一个文件，通过微信/QQ/邮件直接发给作者。"),
                 MIAActionSpec(MIAFXActionViewDiagnostics, @"查看诊断日志", @"在应用内直接查看最近的诊断记录，可截图反馈。"),
                 MIAActionSpec(MIAFXActionClearDiagnostics, @"清空诊断日志", @"删除已有日志，重新开始记录。"),
             ]),

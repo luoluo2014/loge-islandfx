@@ -9,6 +9,7 @@
 #import "MIAFXConstants.h"
 #import "MIAFXDefaults.h"
 #import "MIAFXFilzaLauncher.h"
+#import "MIAFXLog.h"
 #import "MIAFXNumberControlCell.h"
 #import "MIAFXPath.h"
 #import "MIAFXPreviewView.h"
@@ -506,6 +507,9 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
 
     [[MIAFXFilzaLauncher sharedLauncher] ensureDirectories];
 
+    // 旧版把视频拷进了沙盒容器，插件永远读不到：这里一次性迁移到 CFPreferences 投递
+    [self migrateLegacyVideoPaths];
+
     __weak typeof(self) weakSelf = self;
     [[MIAFXConfig sharedConfig] addObserver:^(NSDictionary<NSString *, id> *settings) {
         (void)settings;
@@ -932,8 +936,14 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
     }]];
     [sheet addAction:[UIAlertAction actionWithTitle:@"在 Filza 中打开" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         NSString *path = [weakSelf specCurrentString:spec];
-        NSString *target = path.length > 0 ? path : [[MIAFXFilzaLauncher sharedLauncher] dataDirectory];
+        // 插件只认真实 /var/jb 目录；沙盒路径对它不存在，统一指向真实素材目录
+        NSString *target = path.length > 0 ? path : [[MIAFXFilzaLauncher sharedLauncher] videosDirectory];
         [[MIAFXFilzaLauncher sharedLauncher] openPath:target title:spec.title fromViewController:weakSelf];
+    }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:@"复制真实素材目录" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        [[MIAFXFilzaLauncher sharedLauncher] copyToPasteboard:[[MIAFXFilzaLauncher sharedLauncher] videosDirectory]
+                                                         hint:@"真实路径已复制"
+                                         fromViewController:weakSelf];
     }]];
     [sheet addAction:[UIAlertAction actionWithTitle:@"复制当前路径" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         NSString *path = [weakSelf specCurrentString:spec];
@@ -959,11 +969,13 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
 
 - (void)presentPathEditorForSpec:(MIAFXSettingSpec *)spec {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:spec.title
-                                                                  message:@"请输入完整路径，例如 var/mobile/Library/MIAFX/Videos/demo.mp4"
+                                                                  message:@"请输入文件名（如 demo.mp4），插件会在真实素材目录中查找；也可以填完整路径。\n真实目录：/var/jb/var/mobile/Library/LogeIsland/Videos"
                                                            preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
-        textField.text = [self specCurrentString:spec];
-        textField.placeholder = @"文件路径";
+        // 历史值是绝对路径时，只回填文件名，避免用户误以为沙盒路径可用
+        NSString *current = [self specCurrentString:spec];
+        textField.text = current.lastPathComponent;
+        textField.placeholder = @"文件名或完整路径";
         textField.autocorrectionType = UITextAutocorrectionTypeNo;
     }];
     __weak typeof(self) weakSelf = self;
@@ -1291,7 +1303,8 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
             free(machine);
         }
     }
-    [out appendFormat:@"数据目录：%@\n\n", MIAFXDataDirectory()];
+    [out appendFormat:@"沙盒数据目录（仅本进程可见）：%@\n", MIAFXDataDirectory()];
+    [out appendFormat:@"真实数据目录（插件/Filza 视角）：%@\n\n", [MIAFXFilzaLauncher sharedLauncher].dataDirectory];
 
     [out appendString:@"----- video-diag.log（视频背景诊断，尾部）-----\n"];
     [out appendString:[self tailOfFileAtPath:MIAFXVideoDiagPath() maxBytes:120 * 1024] ?: @"（暂无：插件可能未加载或从未触发灵动岛）"];
@@ -1301,7 +1314,7 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
     [out appendString:[[NSDictionary dictionaryWithContentsOfFile:MIAFXDiagnosticsPath()] description] ?: @"（无）"];
     [out appendString:@"\n\n----- panic.plist（启动保护状态）-----\n"];
     [out appendString:[[NSDictionary dictionaryWithContentsOfFile:MIAFXPanicPath()] description] ?: @"（无）"];
-    [out appendString:@"\n\n----- settings.plist（Global.* 与 *.Video.* 关键配置）-----\n"];
+    [out appendString:@"\n----- settings.plist（Global.* 与 *.Video.* 关键配置，沙盒兜底副本）-----\n"];
     NSDictionary *settings = [NSDictionary dictionaryWithContentsOfFile:MIAFXSettingsPath()];
     if ([settings isKindOfClass:NSDictionary.class]) {
         for (NSString *key in [settings.allKeys sortedArrayUsingSelector:@selector(compare:)]) {
@@ -1310,20 +1323,36 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
             }
         }
     } else {
-        [out appendString:@"（无：插件可能从未写入配置）"];
+        [out appendString:@"（无）"];
     }
-    [out appendString:@"\n----- Videos 素材目录清单 -----\n"];
-    NSString *videosDirectory = [[MIAFXFilzaLauncher sharedLauncher] videosDirectory];
-    NSArray<NSString *> *items = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:videosDirectory error:nil];
-    if (items.count == 0) {
-        [out appendString:@"（空）"];
+    [out appendString:@"\n----- CFPreferences 域 com.loge.islandfx（跨进程主通道，权威值）-----\n"];
+    NSDictionary *domain = [self publishedDomainSnapshot];
+    if (domain.count == 0) {
+        [out appendString:@"（空：设置端从未保存过，或插件尚未写入）"];
     } else {
-        for (NSString *name in [items sortedArrayUsingSelector:@selector(compare:)]) {
-            NSString *full = [videosDirectory stringByAppendingPathComponent:name];
-            NSDictionary *attributes = [[NSFileManager defaultManager] attributesOfItemAtPath:full error:nil];
-            [out appendFormat:@"%@ (%llu KB)\n", name, (unsigned long long)([attributes[NSFileSize] unsignedLongLongValue] / 1024)];
+        for (NSString *key in [domain.allKeys sortedArrayUsingSelector:@selector(compare:)]) {
+            id value = domain[key];
+            // NSData（视频 blob）只打印长度，避免把诊断日志撑爆
+            if ([value isKindOfClass:NSData.class]) {
+                [out appendFormat:@"%@ = <NSData %lu KB>\n", key, (unsigned long)(((NSData *)value).length / 1024)];
+            } else {
+                [out appendFormat:@"%@ = %@\n", key, value ?: @"(null)"];
+            }
         }
     }
+    [out appendString:@"\n----- Videos 素材清单（插件端发布，真实目录不可从本进程列出）-----\n"];
+    NSArray<NSDictionary *> *assets = [self publishedVideoAssets];
+    if (assets.count == 0) {
+        [out appendString:@"（空：插件尚未发布清单，或从未加载）"];
+    } else {
+        for (NSDictionary *asset in assets) {
+            [out appendFormat:@"%@ (%@ KB)\n", asset[@"name"] ?: @"?", asset[@"size"] ?: @"?"];
+        }
+    }
+    [out appendFormat:@"真实素材目录：%@\n", [MIAFXFilzaLauncher sharedLauncher].videosDirectory];
+    [out appendString:@"\n----- 待投递暂存（Import.Pending）-----\n"];
+    NSArray *pending = [self publishedPendingImports] ?: @[];
+    [out appendString:pending.count > 0 ? [pending componentsJoinedByString:@", "] : @"（无）"];
     [out appendString:@"\n===== 结束 ====="];
     return out;
 }
@@ -1473,8 +1502,26 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
     self.pendingImportSpecKey = nil;
     if (targetKey.length > 0) {
         MIAFXSettingSpec *spec = [self specForKey:targetKey];
+        if (spec == nil) return;
+        if ([self specSupportsPhotoImport:spec]) {
+            // 视频路径：文件对插件不可见（ realm 不同），必须走 CFPreferences 投递
+            BOOL secured = [url startAccessingSecurityScopedResource];
+            NSString *name = [self stageVideoForImportFromURL:url suggestedName:url.lastPathComponent];
+            if (secured) [url stopAccessingSecurityScopedResource];
+            if (name.length == 0) return;
+            [[MIAFXSettingsCatalog sharedCatalog] stageObject:name forSpec:spec];
+            [self commitAndRefresh];
+            [self showNotice:[NSString stringWithFormat:@"已导入：%@", name]];
+            __weak typeof(self) weakSelf = self;
+            [self verifyStagedVideo:name completion:^(BOOL delivered) {
+                if (delivered) return;
+                [weakSelf showErrorAlert:[NSString stringWithFormat:@"插件尚未收到「%@」。\n请打开一次灵动岛后重试，或改用 Filza 手动放置文件到：\n%@",
+                                          name, [MIAFXFilzaLauncher sharedLauncher].videosDirectory]];
+            }];
+            return;
+        }
         NSString *path = url.path;
-        if (spec && path.length > 0) {
+        if (path.length > 0) {
             [[MIAFXSettingsCatalog sharedCatalog] stageObject:path forSpec:spec];
             [self commitAndRefresh];
             [self showNotice:[NSString stringWithFormat:@"已写入 %@", spec.title]];
@@ -1501,29 +1548,42 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
     return [spec.key isEqualToString:@"Compact.Video.Path"] || [spec.key isEqualToString:@"Expanded.Video.Path"];
 }
 
-/// 列出 Videos 目录里已有的视频文件，点选直接设为背景
+/// 列出插件已发布到真实目录的素材（Assets.Videos），点选直接设为背景
+/// 注意：设置 App 的 jbroot() 被重定向进沙盒容器，插件（SpringBoard）读不到，
+///       因此这里不扫本地目录，改读插件端通过 CFPreferences 发布的清单。
 - (void)presentVideoDirectoryPickerForSpec:(MIAFXSettingSpec *)spec {
-    NSString *directory = [[MIAFXFilzaLauncher sharedLauncher] videosDirectory];
-    NSArray<NSString *> *videos = [self videoFilesInDirectory:directory];
+    NSArray<NSDictionary *> *assets = [self publishedVideoAssets];
     UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"选择视频素材"
-                                                                  message:[NSString stringWithFormat:@"Videos 目录（%lu 个视频）", (unsigned long)videos.count]
+                                                                  message:[NSString stringWithFormat:@"灵动岛可用素材（%lu 个）", (unsigned long)assets.count]
                                                            preferredStyle:UIAlertControllerStyleActionSheet];
     __weak typeof(self) weakSelf = self;
-    if (videos.count == 0) {
-        [sheet addAction:[UIAlertAction actionWithTitle:@"目录里还没有视频 → 去相册导入" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+    if (assets.count == 0) {
+        [sheet addAction:[UIAlertAction actionWithTitle:@"还没有素材 → 去相册导入" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
             [weakSelf presentPhotoPickerForSpec:spec];
         }]];
     } else {
-        for (NSString *path in videos) {
-            NSString *name = path.lastPathComponent;
-            BOOL current = [path isEqualToString:[weakSelf specCurrentString:spec]];
-            NSString *title = current ? [name stringByAppendingString:@"  ✓"] : name;
+        NSString *current = [weakSelf specCurrentString:spec].lastPathComponent;
+        for (NSDictionary *asset in assets) {
+            NSString *name = [asset[@"name"] isKindOfClass:NSString.class] ? asset[@"name"] : @"";
+            if (name.length == 0) continue;
+            NSNumber *size = [asset[@"size"] isKindOfClass:NSNumber.class] ? asset[@"size"] : nil;
+            NSString *title = size ? [NSString stringWithFormat:@"%@（%@ KB）", name, size] : name;
+            if ([name isEqualToString:current]) title = [title stringByAppendingString:@"  ✓"];
             [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-                [[MIAFXSettingsCatalog sharedCatalog] stageObject:path forSpec:spec];
+                // 只存文件名：插件端会解析到真实 Videos 目录
+                [[MIAFXSettingsCatalog sharedCatalog] stageObject:name forSpec:spec];
                 [weakSelf commitAndRefresh];
             }]];
         }
     }
+    [sheet addAction:[UIAlertAction actionWithTitle:@"刷新清单" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        [weakSelf refreshPublishedAssets];
+    }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:@"在 Filza 中打开素材目录" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        [[MIAFXFilzaLauncher sharedLauncher] openPath:[[MIAFXFilzaLauncher sharedLauncher] videosDirectory]
+                                                 title:@"视频素材"
+                                 fromViewController:weakSelf];
+    }]];
     [sheet addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     if (sheet.popoverPresentationController) {
         sheet.popoverPresentationController.sourceView = self.view;
@@ -1532,20 +1592,165 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
     [self presentViewController:sheet animated:YES completion:nil];
 }
 
-- (NSArray<NSString *> *)videoFilesInDirectory:(NSString *)directory {
-    NSFileManager *manager = [NSFileManager defaultManager];
-    NSArray<NSString *> *items = [manager contentsOfDirectoryAtPath:directory error:nil];
-    NSSet<NSString *> *extensions = [NSSet setWithArray:@[@"mp4", @"mov", @"m4v", @"mpg", @"mpeg", @"3gp", @"avi", @"mkv", @"webm"]];
-    NSMutableArray<NSString *> *videos = [NSMutableArray array];
-    for (NSString *name in items) {
-        NSString *extension = name.pathExtension.lowercaseString;
-        if (extension.length == 0 || ![extensions containsObject:extension]) continue;
-        NSString *full = [directory stringByAppendingPathComponent:name];
-        BOOL isDirectory = NO;
-        if (![manager fileExistsAtPath:full isDirectory:&isDirectory] || isDirectory) continue;
-        [videos addObject:full];
+#pragma mark - 素材投递（设置端 → CFPreferences → 插件端真实目录）
+
+/// 插件端发布的真实目录清单（Assets.Videos）。
+/// 兜底：若跨进程偏好域在本进程读不到（极少数 RootHide 配置下沙盒读不到全局域），
+///       再把本进程可见的容器目录也列出来——万一 RootHide 做了重定向，插件写的文件
+///       就能从这里看到，用户照样能选。
+- (NSArray<NSDictionary *> *)publishedVideoAssets {
+    MIAFXPrefsSynchronize();
+    id value = MIAFXPrefsObject(MIAFXPrefsKeyAssetsVideos);
+    NSMutableDictionary<NSString *, NSDictionary *> *byName = [NSMutableDictionary dictionary];
+    if ([value isKindOfClass:NSArray.class]) {
+        for (id item in value) {
+            if (![item isKindOfClass:NSDictionary.class]) continue;
+            NSString *name = [item[@"name"] isKindOfClass:NSString.class] ? item[@"name"] : nil;
+            if (name.length > 0) byName[name] = item;
+        }
     }
-    return [videos sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)];
+    if (byName.count == 0) {
+        NSString *directory = [[MIAFXFilzaLauncher sharedLauncher] legacyContainerVideosDirectory];
+        NSFileManager *manager = [NSFileManager defaultManager];
+        NSSet<NSString *> *extensions = [NSSet setWithArray:@[@"mp4", @"mov", @"m4v", @"mpg", @"mpeg", @"3gp", @"avi", @"mkv", @"webm"]];
+        for (NSString *name in [manager contentsOfDirectoryAtPath:directory error:nil] ?: @[]) {
+            if (![extensions containsObject:name.pathExtension.lowercaseString]) continue;
+            NSString *full = [directory stringByAppendingPathComponent:name];
+            BOOL isDirectory = NO;
+            if (![manager fileExistsAtPath:full isDirectory:&isDirectory] || isDirectory) continue;
+            NSDictionary *attributes = [manager attributesOfItemAtPath:full error:nil];
+            byName[name] = @{ @"name": name,
+                              @"size": @([attributes[NSFileSize] unsignedLongLongValue] / 1024) };
+        }
+    }
+    return [byName.allValues sortedArrayUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:@"name" ascending:YES selector:@selector(localizedCaseInsensitiveCompare:)]]];
+}
+
+/// 设置端主动请求插件刷新清单（发一条重载通知，插件收到后会重新扫描并发布）
+- (void)refreshPublishedAssets {
+    notify_post(MIAFX_NOTIFY_RELOAD);
+    [self showNotice:@"已请求刷新，稍后重新打开本页即可看到最新素材"];
+}
+
+/// 把视频文件暂存进 CFPreferences，等插件端落地到真实目录。
+/// 返回落地时使用的文件名（调用方应把它写进配置，只存文件名）。
+/// 允许在后台队列调用（PHPicker 的文件回调不在主线程）。
+- (nullable NSString *)stageVideoForImportFromURL:(NSURL *)sourceURL suggestedName:(nullable NSString *)suggestedName {
+    NSData *data = [NSData dataWithContentsOfURL:sourceURL options:NSDataReadingMappedIfSafe error:nil];
+    if (data == nil) {
+        // Mapped 失败时退回普通读
+        data = [NSData dataWithContentsOfURL:sourceURL];
+    }
+    if (data == nil || data.length == 0) {
+        [self showErrorAlertOnMain:@"无法读取所选视频的数据"];
+        return nil;
+    }
+    static const NSUInteger kMIAFXMaxBlobBytes = 64ULL * 1024ULL * 1024ULL;
+    if (data.length > kMIAFXMaxBlobBytes) {
+        [self showErrorAlertOnMain:[NSString stringWithFormat:@"视频体积 %lu MB 超过投递上限（64 MB）。\n请改用 Filza 把文件放进：\n%@\n然后用「从素材目录选择」选取。",
+                                    (unsigned long)(data.length / 1024 / 1024), [MIAFXFilzaLauncher sharedLauncher].videosDirectory]];
+        return nil;
+    }
+
+    NSString *base = suggestedName.length > 0 ? suggestedName : sourceURL.lastPathComponent;
+    if (base.length == 0) base = @"video";
+    NSString *extension = sourceURL.pathExtension;
+    if (extension.length == 0) extension = @"mp4";
+    NSString *name = [base.stringByDeletingPathExtension stringByAppendingPathExtension:extension];
+    name = name.lastPathComponent;
+
+    // 与已有素材重名时加序号，避免覆盖用户此前导入的文件
+    NSMutableSet<NSString *> *existing = [NSMutableSet set];
+    for (NSDictionary *asset in [self publishedVideoAssets]) {
+        NSString *assetName = [asset[@"name"] isKindOfClass:NSString.class] ? asset[@"name"] : nil;
+        if (assetName.length > 0) [existing addObject:assetName];
+    }
+    if ([existing containsObject:name]) {
+        NSString *stem = name.stringByDeletingPathExtension;
+        NSUInteger index = 2;
+        NSString *candidate = name;
+        while ([existing containsObject:candidate]) {
+            candidate = [stem stringByAppendingFormat:@"_%lu", (unsigned long)index++];
+        }
+        name = [candidate stringByAppendingPathExtension:extension] ?: candidate;
+    }
+
+    NSMutableArray *pending = [[self publishedPendingImports] mutableCopy] ?: [NSMutableArray array];
+    if (![pending isKindOfClass:NSMutableArray.class]) pending = [NSMutableArray array];
+    if (![pending containsObject:name]) [pending addObject:name];
+
+    MIAFXPrefsSetObject(data, [MIAFXPrefsKeyImportBlobPrefix stringByAppendingString:name]);
+    MIAFXPrefsSetObject(pending, MIAFXPrefsKeyPendingImports);
+    MIAFXPrefsSynchronize();
+    MIAFXDiagLog(@"设置端已暂存视频 %@（%lu KB），等待插件落地", name, (unsigned long)(data.length / 1024));
+    return name;
+}
+
+- (NSArray *)publishedPendingImports {
+    MIAFXPrefsSynchronize();
+    id value = MIAFXPrefsObject(MIAFXPrefsKeyPendingImports);
+    return [value isKindOfClass:NSArray.class] ? value : nil;
+}
+
+/// 整个 CFPreferences 域的键值快照（用于诊断反馈；NSData 原样返回，由调用方决定如何展示）
+- (NSDictionary<NSString *, id> *)publishedDomainSnapshot {
+    MIAFXPrefsSynchronize();
+    NSMutableDictionary<NSString *, id> *result = [NSMutableDictionary dictionary];
+    for (NSString *key in MIAFXPrefsAllKeys()) {
+        id value = MIAFXPrefsObject(key);
+        if (value != nil) result[key] = value;
+    }
+    return result;
+}
+
+/// 轮询插件端发布的清单，确认暂存的素材已经落地；用于给用户一个明确的成功/失败反馈
+- (void)verifyStagedVideo:(NSString *)name completion:(void (^)(BOOL delivered))completion {
+    __block NSUInteger attempts = 0;
+    __weak typeof(self) weakSelf = self;
+    dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+    dispatch_source_set_timer(timer, DISPATCH_TIME_NOW, 1.0 * NSEC_PER_SEC, 1.0 * NSEC_PER_SEC);
+    dispatch_source_set_event_handler(timer, ^{
+        attempts += 1;
+        BOOL found = NO;
+        for (NSDictionary *asset in [weakSelf publishedVideoAssets]) {
+            if ([[asset[@"name"] description] isEqualToString:name]) { found = YES; break; }
+        }
+        if (found || attempts >= 12) {
+            dispatch_source_cancel(timer);
+            if (completion) completion(found);
+        }
+    });
+    dispatch_resume(timer);
+}
+
+/// 迁移旧版：配置里指向沙盒容器的绝对路径，且文件确实在容器里 → 暂存为 blob，路径改写为文件名
+- (void)migrateLegacyVideoPaths {
+    NSArray<NSString *> *keys = @[@"Compact.Video.Path", @"Expanded.Video.Path"];
+    MIAFXConfig *config = [MIAFXConfig sharedConfig];
+    NSMutableArray<NSString *> *staged = [NSMutableArray array];
+    for (NSString *key in keys) {
+        NSString *raw = [config stringForKey:key];
+        if (raw.length == 0) continue;
+        if (![raw hasPrefix:@"/"]) continue;                       // 已经是文件名制
+        MIAFXSettingSpec *spec = [self specForKey:key];
+        if (spec == nil) continue;
+        if (!MIAFXIsSandboxContainerPath(raw)) continue;           // 非容器路径（真实 /var/jb）不处理
+        NSURL *url = [NSURL fileURLWithPath:raw];
+        if (![[NSFileManager defaultManager] fileExistsAtPath:raw]) {
+            // 容器里的文件已不可见（插件从未读到过）：改写成文件名，让插件按名字去真实目录找
+            [[MIAFXSettingsCatalog sharedCatalog] stageObject:raw.lastPathComponent forSpec:spec];
+            continue;
+        }
+        NSString *name = [self stageVideoForImportFromURL:url suggestedName:raw.lastPathComponent];
+        if (name.length > 0) {
+            [[MIAFXSettingsCatalog sharedCatalog] stageObject:name forSpec:spec];
+            [staged addObject:name];
+        }
+    }
+    if (staged.count > 0) {
+        [self commitAndRefresh];
+        MIAFXDiagLog(@"已迁移 %lu 个旧版容器内视频", (unsigned long)staged.count);
+    }
 }
 
 - (void)presentPhotoPickerForSpec:(MIAFXSettingSpec *)spec {
@@ -1580,38 +1785,26 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
             });
             return;
         }
-        NSError *copyError = nil;
-        NSString *destPath = [weakSelf importVideoToVideosDirectory:url error:&copyError];
+        // 该 URL 只在回调内有效：必须在这里读成数据并暂存
+        NSString *name = [weakSelf stageVideoForImportFromURL:url suggestedName:nil];
+        if (name.length == 0) return;
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (destPath.length == 0) {
-                [weakSelf showErrorAlert:copyError.localizedDescription ?: @"导入视频失败"];
-                return;
-            }
             MIAFXSettingSpec *spec = [weakSelf specForKey:targetKey];
             if (spec) {
-                [[MIAFXSettingsCatalog sharedCatalog] stageObject:destPath forSpec:spec];
+                // 乐观写入：插件端会按同名文件落地
+                [[MIAFXSettingsCatalog sharedCatalog] stageObject:name forSpec:spec];
                 [weakSelf commitAndRefresh];
-                [weakSelf showNotice:[NSString stringWithFormat:@"已添加视频：%@", destPath.lastPathComponent]];
+                [weakSelf showNotice:[NSString stringWithFormat:@"已导入：%@", name]];
             }
+            [weakSelf verifyStagedVideo:name completion:^(BOOL delivered) {
+                if (delivered) return;
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [weakSelf showErrorAlert:[NSString stringWithFormat:@"插件尚未收到「%@」。\n可能原因：灵动岛插件未加载，或 SpringBoard 还没被触发。\n请打开一次灵动岛（播放音乐/充电动画）后重试；也可用 Filza 手动把文件放到：\n%@",
+                                              name, [MIAFXFilzaLauncher sharedLauncher].videosDirectory]];
+                });
+            }];
         });
     }];
-}
-
-- (nullable NSString *)importVideoToVideosDirectory:(NSURL *)sourceURL error:(NSError **)error {
-    [[MIAFXFilzaLauncher sharedLauncher] ensureDirectories];
-    NSString *directory = [[MIAFXFilzaLauncher sharedLauncher] videosDirectory];
-    NSString *extension = sourceURL.pathExtension.length > 0 ? sourceURL.pathExtension : @"mp4";
-    NSFileManager *manager = [NSFileManager defaultManager];
-    NSString *base = [NSString stringWithFormat:@"album_%lld", (long long)[[NSDate date] timeIntervalSince1970]];
-    NSString *dest = [directory stringByAppendingPathComponent:[base stringByAppendingPathExtension:extension]];
-    NSUInteger index = 1;
-    while ([manager fileExistsAtPath:dest]) {
-        NSString *name = [NSString stringWithFormat:@"%@_%lu", base, (unsigned long)index];
-        dest = [directory stringByAppendingPathComponent:[name stringByAppendingPathExtension:extension]];
-        index += 1;
-    }
-    if (![manager copyItemAtURL:sourceURL toURL:[NSURL fileURLWithPath:dest] error:error]) return nil;
-    return dest;
 }
 
 - (nullable MIAFXSettingSpec *)specForKey:(NSString *)key {
@@ -1633,6 +1826,13 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
                                                            preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
+}
+
+/// 供后台队列（如 PHPicker 文件回调）安全调用
+- (void)showErrorAlertOnMain:(NSString *)message {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self showErrorAlert:message];
+    });
 }
 
 - (void)showNotice:(NSString *)message {

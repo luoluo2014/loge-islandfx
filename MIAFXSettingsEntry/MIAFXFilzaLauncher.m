@@ -33,8 +33,10 @@
 
 #pragma mark 路径
 
-- (NSString *)dataDirectory { return MIAFXDataDirectory(); }
-- (NSString *)videosDirectory { return [MIAFXDataDirectory() stringByAppendingPathComponent:@"Videos"]; }
+- (NSString *)dataDirectory { return MIAFXRealVideosDirectory().stringByDeletingLastPathComponent; }
+/// Filza 以 root 运行，必须给真实 /var/jb 路径；沙盒内的 jbroot 路径对插件不可见
+- (NSString *)videosDirectory { return MIAFXRealVideosDirectory(); }
+- (NSString *)legacyContainerVideosDirectory { return MIAFXVideosDirectory(); }
 - (NSString *)masksDirectory { return [MIAFXDataDirectory() stringByAppendingPathComponent:@"Masks"]; }
 - (NSString *)customOrbitsDirectory { return [MIAFXDataDirectory() stringByAppendingPathComponent:@"CustomOrbits"]; }
 - (NSString *)presetsDirectory { return [MIAFXDataDirectory() stringByAppendingPathComponent:@"Presets"]; }

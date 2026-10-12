@@ -3,6 +3,48 @@
 #import "MIAFXPath.h"
 #import <notify.h>
 
+NSString *const MIAFXPrefsAppID = @"com.loge.islandfx";
+NSString *const MIAFXPrefsKeyPendingImports = @"Import.Pending";
+NSString *const MIAFXPrefsKeyImportBlobPrefix = @"Import.Blob.";
+NSString *const MIAFXPrefsKeyAssetsVideos = @"Assets.Videos";
+
+#pragma mark - CFPreferences 直连辅助（不经过 MIAFXConfig 缓存）
+
+void MIAFXPrefsSetObject(id value, NSString *key) {
+    if (key.length == 0) return;
+    // nil 视为删除（plist 不能写 null）
+    if (value == nil) {
+        MIAFXPrefsRemoveObject(key);
+        return;
+    }
+    CFPreferencesSetAppValue((CFStringRef)key, (__bridge CFPropertyListRef)value, (CFStringRef)MIAFXPrefsAppID);
+}
+
+void MIAFXPrefsRemoveObject(NSString *key) {
+    if (key.length == 0) return;
+    CFPreferencesSetAppValue((CFStringRef)key, NULL, (CFStringRef)MIAFXPrefsAppID);
+}
+
+id MIAFXPrefsObject(NSString *key) {
+    if (key.length == 0) return nil;
+    CFPropertyListRef value = CFPreferencesCopyAppValue((CFStringRef)key, (CFStringRef)MIAFXPrefsAppID);
+    if (value == NULL) return nil;
+    // Copy 系列：交出所有权给 ARC，避免泄漏
+    return CFBridgingRelease(value);
+}
+
+NSArray<NSString *> *MIAFXPrefsAllKeys(void) {
+    CFArrayRef keys = CFPreferencesCopyKeyList((CFStringRef)MIAFXPrefsAppID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+    if (keys == NULL) return @[];
+    NSArray *result = [(__bridge NSArray *)keys copy];
+    CFRelease(keys);
+    return result;
+}
+
+void MIAFXPrefsSynchronize(void) {
+    CFPreferencesAppSynchronize((CFStringRef)MIAFXPrefsAppID);
+}
+
 @interface MIAFXConfig ()
 @property (nonatomic, strong) NSMutableDictionary<NSString *, id> *values;
 @property (nonatomic, strong) NSMutableArray<MIAFXConfigObserver> *observers;
@@ -60,20 +102,46 @@
 }
 
 - (BOOL)save:(NSError **)error {
-    if (!MIAFXEnsureDataDirectories(error)) return NO;
     NSDictionary *snapshot = [self snapshot];
-    BOOL ok = [snapshot writeToURL:[NSURL fileURLWithPath:MIAFXSettingsPath()] error:error];
+    @synchronized (self) {
+        for (NSString *key in snapshot) {
+            // 素材投递/清单由插件端独占维护，设置端不回写
+            if ([key hasPrefix:@"Import."] || [key hasPrefix:@"Assets."]) continue;
+            id value = snapshot[key];
+            if (value == nil) {
+                CFPreferencesSetAppValue((CFStringRef)key, NULL, (CFStringRef)MIAFXPrefsAppID);
+            } else {
+                CFPreferencesSetAppValue((CFStringRef)key, (__bridge CFPropertyListRef)value, (CFStringRef)MIAFXPrefsAppID);
+            }
+        }
+    }
+    Boolean ok = CFPreferencesAppSynchronize((CFStringRef)MIAFXPrefsAppID);
+    // 保留文件写入（仅调试/兜底，不再是跨进程通道）
+    MIAFXEnsureDataDirectories(nil);
+    [snapshot writeToURL:[NSURL fileURLWithPath:MIAFXSettingsPath()] error:nil];
     if (ok) {
         [self publishLiveState];
         notify_post(MIAFX_NOTIFY_RELOAD);
     }
-    return ok;
+    return ok ? YES : NO;
 }
 
 - (void)reload {
-    NSDictionary *disk = [NSDictionary dictionaryWithContentsOfFile:MIAFXSettingsPath()];
     NSMutableDictionary *merged = [MIAFXDefaultSettings() mutableCopy];
-    if ([disk isKindOfClass:NSDictionary.class]) [merged addEntriesFromDictionary:disk];
+
+    // 1) CFPreferences 域：跨进程主通道，优先级最高
+    NSArray<NSString *> *cfKeys = MIAFXPrefsAllKeys();
+    for (NSString *key in cfKeys) {
+        id value = MIAFXPrefsObject(key);
+        if (value != nil) merged[key] = value;
+    }
+
+    // 2) 兼容旧版：仅当 CFPreferences 域为空（首次迁移）时才采用 jbroot 文件里的值
+    if (cfKeys.count == 0) {
+        NSDictionary *disk = [NSDictionary dictionaryWithContentsOfFile:MIAFXSettingsPath()];
+        if ([disk isKindOfClass:NSDictionary.class]) [merged addEntriesFromDictionary:disk];
+    }
+
     @synchronized (self) { self.values = merged; }
     NSArray<MIAFXConfigObserver> *callbacks;
     @synchronized (self) { callbacks = [self.observers copy]; }

@@ -30,6 +30,15 @@
 #import "MIAFXSafe.h"
 #import "MIAFXStateCoordinator.h"
 
+// MIAFXVideoBackground.xm 的模块入口（懒加载 hook + 素材投递）
+#ifdef __cplusplus
+extern "C" {
+#endif
+void MIAFXVideoBackgroundStart(void);
+#ifdef __cplusplus
+}
+#endif
+
 static BOOL gMIAFXBootGuardPassed = NO;
 static int gMIAFXDiagnosticsToken = -1;
 static int gMIAFXRescanToken = -1;
@@ -164,6 +173,9 @@ static void MIAFXScheduleBootStable(void) {
         [[MIAFXIslandHostBridge sharedBridge] registerDelayedDetection];
         MIAFXRegisterNotifications();
         MIAFXScheduleBootStable();
+
+        // 视频背景：懒加载 hook（真机证实 _SPIslandRenderSurface 注入时不存在）+ 素材投递
+        MIAFXVideoBackgroundStart();
 
         MIAFXLog(@"MIAFX 已在 SpringBoard(%@) 就绪", MIAFXSystemVersionString());
         MIAFXDiag(@"MIAFX 初始化完成，等待灵动岛触发");

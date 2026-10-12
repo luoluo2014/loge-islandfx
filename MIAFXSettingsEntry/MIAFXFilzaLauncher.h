@@ -30,7 +30,10 @@ typedef NS_ENUM(NSUInteger, MIAFXFilzaLocation) {
 #pragma mark 路径
 
 - (NSString *)dataDirectory;
+/// 真实 Videos 目录（/var/jb 前缀，Filza / root 视角）——插件端唯一可读的位置
 - (NSString *)videosDirectory;
+/// 设置 App 沙盒容器内的旧版 Videos 目录（仅用于迁移历史导入，不再作为投放目标）
+- (NSString *)legacyContainerVideosDirectory;
 - (NSString *)masksDirectory;
 - (NSString *)customOrbitsDirectory;
 - (NSString *)presetsDirectory;
