@@ -6,6 +6,10 @@ on:
     tags: [ 'v*' ]
   workflow_dispatch:
 
+# 标签推送时要创建 Release 并上传 deb，需要 contents: write
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: macos-14
@@ -30,7 +34,17 @@ jobs:
           echo "=== 生成的 deb ==="
           find . -name '*.deb' -type f -print
           echo "=== 包信息 ==="
-          find . -name '*.deb' -type f -exec sh -c 'dpkg-deb -I "$1" | grep -E "Package|Version|Architecture"' _ {} \;
+          if command -v dpkg-deb >/dev/null 2>&1; then
+            find . -name '*.deb' -type f -exec sh -c 'dpkg-deb -I "$1" | grep -E "Package|Version|Architecture"' _ {} \;
+          else
+            # macOS runner 没有 dpkg-deb，退回 ar + tar 读 control
+            find . -name '*.deb' -type f | while read -r deb; do
+              tmp="$(mktemp -d)"
+              ( cd "$tmp" && ar x "$OLDPWD/$deb" control.tar.gz && tar xzf control.tar.gz )
+              grep -E "^(Package|Version|Architecture):" "$tmp/control"
+              rm -rf "$tmp"
+            done
+          fi
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
