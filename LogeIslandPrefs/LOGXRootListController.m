@@ -12,13 +12,19 @@
 #import <spawn.h>
 #import <sys/wait.h>
 
+@interface LOGXRootListController ()
+// 不用 PSListController 的 _specifiers ivar（arm64e 下该 ivar 符号不导出，
+// 正常链接时 dyld 找不到会导致 bundle dlopen 失败），改用自有缓存属性。
+@property (nonatomic, strong) NSArray *cachedSpecifiers;
+@end
+
 @implementation LOGXRootListController
 
 - (NSArray *)specifiers {
-    if (!_specifiers) {
-        _specifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
+    if (!self.cachedSpecifiers) {
+        self.cachedSpecifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
     }
-    return _specifiers;
+    return self.cachedSpecifiers;
 }
 
 - (UITableViewStyle)tableViewStyle {
