@@ -49,6 +49,21 @@ for f in "$DYLIB" "$BUNDLE"; do
     echo "$info" | grep -q "arm64e" || die "$(basename "$f") 不是 arm64e"
 done
 
+log "1b) chained fixups 校验（arm64e 类元数据 PAC 指针依赖它）"
+python3 - "$BUNDLE" <<'PYEOF' || die "bundle 缺少 LC_DYLD_CHAINED_FIXUPS"
+import struct, sys
+data = open(sys.argv[1], 'rb').read()
+ncmds = struct.unpack('<I', data[16:20])[0]
+off, has_cf = 32, False
+for _ in range(ncmds):
+    cmd, size = struct.unpack('<II', data[off:off+8])
+    if cmd == 0x80000034:  # LC_DYLD_CHAINED_FIXUPS
+        has_cf = True
+    off += size
+print("  [✓] LC_DYLD_CHAINED_FIXUPS" if has_cf else "  [✗] 缺少 LC_DYLD_CHAINED_FIXUPS")
+sys.exit(0 if has_cf else 1)
+PYEOF
+
 log "2) 中文文案校验（UTF-16LE 解码 + plist）"
 python3 - "$DYLIB" "$BUNDLE" "$R/Library/PreferenceBundles/LogeIslandPrefs.bundle/Resources/Root.plist" <<'PYEOF' || die "中文文案校验未通过"
 import struct, re, sys

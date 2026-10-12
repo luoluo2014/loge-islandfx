@@ -11,7 +11,15 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /// 常规日志（os_log + 诊断文件）
 void LOGXDiag(NSString *format, ...);
+
+#ifdef __cplusplus
+}
+#endif
 
 NS_ASSUME_NONNULL_END

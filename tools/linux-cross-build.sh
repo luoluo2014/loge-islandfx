@@ -99,7 +99,11 @@ link_macho() {
     done
     case "$kind" in
         dylib)  cmd+=("-dylib" "-install_name" "/Library/MobileSubstrate/DynamicLibraries/$idname" "-undefined" "dynamic_lookup");;
-        bundle) cmd+=("-bundle" "-undefined" "dynamic_lookup");;
+        # 设置 bundle 不能用 -undefined dynamic_lookup：ld64 会因此禁用 chained fixups
+        # (rdar://102088753)，导致 arm64e 类元数据的 PAC 指针（isa/super/bits）无法被 dyld
+        # 修复，运行到 readClass 的 autda 认证时崩溃。bundle 的全部未定义符号都能在
+        # 已链接框架（Foundation/UIKit/Preferences/PhotosUI 等）里解析，直接省略即可。
+        bundle) cmd+=("-bundle");;
         *) die "未知产物类型：$kind" ;;
     esac
     cmd+=("$@")

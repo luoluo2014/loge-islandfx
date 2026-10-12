@@ -11,6 +11,10 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /// 插件端数据根目录（jbroot 解析后的 /var/mobile/Library/LogeIsland）
 NSString *LOGXDataDirectory(void);
 /// 背景视频落地目录
@@ -23,5 +27,9 @@ NSString *LOGXBootStatePath(void);
 NSString *LOGXRealVideosDirectory(void);
 
 BOOL LOGXEnsureDataDirectories(NSError **error);
+
+#ifdef __cplusplus
+}
+#endif
 
 NS_ASSUME_NONNULL_END

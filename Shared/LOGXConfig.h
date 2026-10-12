@@ -13,6 +13,10 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #pragma mark - CFPreferences 直连辅助（不经过任何缓存）
 
 void LOGXPrefsSetObject(id value, NSString *key);
@@ -35,5 +39,9 @@ void LOGXConfigSetString(NSString *value, NSString *key);
 
 /// 模式键拼接：LOGXModeKey(LOGX_KEY_MODE_ALPHA_FMT, LOGX_MODE_COMPACT)
 NSString *LOGXModeKey(NSString *format, NSString *mode);
+
+#ifdef __cplusplus
+}
+#endif
 
 NS_ASSUME_NONNULL_END

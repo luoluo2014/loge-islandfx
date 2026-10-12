@@ -13,3 +13,6 @@ packages/
 # 系统垃圾
 .DS_Store
 *.swp
+
+# 一次性发布脚本（含 PAT，禁止入库）
+tools/api-push-*.py
