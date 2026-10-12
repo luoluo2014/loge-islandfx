@@ -64,6 +64,35 @@ print("  [✓] LC_DYLD_CHAINED_FIXUPS" if has_cf else "  [✗] 缺少 LC_DYLD_CH
 sys.exit(0 if has_cf else 1)
 PYEOF
 
+log "1c) 类指针 PAC 认证校验（auth/key/addrDiv/discriminator）"
+python3 - "$BUNDLE" <<'PYEOF' || die "类指针 PAC 签名缺失（会触发 readClass 闪退）"
+import struct, sys
+data = open(sys.argv[1], 'rb').read()
+ncmds = struct.unpack('<I', data[16:20])[0]
+off, secs = 32, {}
+for _ in range(ncmds):
+    cmd, size = struct.unpack('<II', data[off:off+8])
+    if cmd == 0x19:
+        nsects = struct.unpack('<I', data[off+64:off+68])[0]
+        for i in range(nsects):
+            s = data[off+72+i*80:off+72+(i+1)*80]
+            name = s[:16].rstrip(b'\0').decode()
+            a, sz = struct.unpack('<QQ', s[32:48])
+            fo = struct.unpack('<I', s[48:52])[0]
+            secs[name] = (a, sz, fo)
+    off += size
+ok = True
+# 第一个 classlist 条目必须是 auth=1 key=2(asda) addrDiv=1 div=0x6AE1
+a, sz, fo = secs['__objc_classlist']
+v = struct.unpack_from('<Q', data, fo)[0]
+auth, key, addrdiv, div = (v>>63)&1, (v>>49)&3, (v>>48)&1, (v>>32)&0xffff
+good = (auth == 1 and key == 2 and addrdiv == 1 and div == 0x6AE1)
+ok &= good
+print("  [✓] classlist[0] auth=1 key=ASDA addrDiv=1 div=0x6AE1" if good
+      else "  [✗] classlist[0] auth=%d key=%d addrDiv=%d div=0x%x" % (auth, key, addrdiv, div))
+sys.exit(0 if ok else 1)
+PYEOF
+
 log "2) 中文文案校验（UTF-16LE 解码 + plist）"
 python3 - "$DYLIB" "$BUNDLE" "$R/Library/PreferenceBundles/LogeIslandPrefs.bundle/Resources/Root.plist" <<'PYEOF' || die "中文文案校验未通过"
 import struct, re, sys

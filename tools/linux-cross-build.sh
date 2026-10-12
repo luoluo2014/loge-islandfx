@@ -165,6 +165,18 @@ for arch in $ARCHS; do
         -framework Preferences -L"$RH" -lroothide || die "链接 LogeIslandPrefs 失败"
 done
 
+# ------------------------------------------------------------ arm64e PAC 后处理
+# Linux clang 18 不生成 ptrauth，bundle 的类指针（isa/superclass/bits/classlist/
+# classrefs）是无签名裸地址；而产物带 PTRAUTH_ABI 位，iOS 14+ 运行时会对它们做
+# PAC 认证（readClass→getSuperclass 的 autda），无签名即崩溃。这里给 chained
+# fixup 上的类指针补上 0x6AE1/asda/addrDiv 签名（dylib 无 chained fixups，不处理）。
+for arch in $ARCHS; do
+    [ "$arch" = "arm64e" ] || continue
+    log "arm64e 类元数据 PAC 后处理"
+    python3 "$SRC/tools/fix-arm64e-ptrauth.py" "$WORK/LogeIslandPrefs-arm64e" \
+        || die "PAC 后处理失败"
+done
+
 # ------------------------------------------------------------------ 合并架构
 first_arch="$(echo "$ARCHS" | awk '{print $1}')"
 log "输出产物"
