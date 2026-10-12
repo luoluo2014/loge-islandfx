@@ -56,7 +56,7 @@ static const NSInteger kMIAFXRepeatAccelerateAt = 12;        // 重复多少次�
     self.backgroundColor = nil;
 
     _titleLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-    _titleLabel.font = [UIFont systemFontOfSize:15.5 weight:UIFontWeightSemibold];
+    _titleLabel.font = [UIFont systemFontOfSize:16.0 weight:UIFontWeightRegular];
     _titleLabel.textColor = UIColor.labelColor;
     _titleLabel.numberOfLines = 2;
     _titleLabel.translatesAutoresizingMaskIntoConstraints = NO;

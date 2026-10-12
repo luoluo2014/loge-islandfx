@@ -20,6 +20,7 @@ FOUNDATION_EXPORT void MIAFXPrefsSynchronize(void);
 FOUNDATION_EXPORT NSString *const MIAFXPrefsKeyPendingImports;   // NSArray<NSString *> 待投递文件名
 FOUNDATION_EXPORT NSString *const MIAFXPrefsKeyImportBlobPrefix; // "Import.Blob." + 文件名 → NSData
 FOUNDATION_EXPORT NSString *const MIAFXPrefsKeyAssetsVideos;     // NSArray<NSDictionary{name,size}> 插件端发布的素材清单
+FOUNDATION_EXPORT NSString *const MIAFXPrefsKeyHeartbeat;        // NSDictionary{at,version,pid} 插件端心跳（证明插件存活且在读同一域）
 
 @interface MIAFXConfig : NSObject
 + (instancetype)sharedConfig;

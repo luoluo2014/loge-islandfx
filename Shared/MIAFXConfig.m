@@ -7,6 +7,7 @@ NSString *const MIAFXPrefsAppID = @"com.loge.islandfx";
 NSString *const MIAFXPrefsKeyPendingImports = @"Import.Pending";
 NSString *const MIAFXPrefsKeyImportBlobPrefix = @"Import.Blob.";
 NSString *const MIAFXPrefsKeyAssetsVideos = @"Assets.Videos";
+NSString *const MIAFXPrefsKeyHeartbeat = @"Plugin.Heartbeat";
 
 #pragma mark - CFPreferences 直连辅助（不经过 MIAFXConfig 缓存）
 
@@ -105,8 +106,8 @@ void MIAFXPrefsSynchronize(void) {
     NSDictionary *snapshot = [self snapshot];
     @synchronized (self) {
         for (NSString *key in snapshot) {
-            // 素材投递/清单由插件端独占维护，设置端不回写
-            if ([key hasPrefix:@"Import."] || [key hasPrefix:@"Assets."]) continue;
+            // 素材投递/清单/心跳由插件端独占维护，设置端不回写（否则会把插件刚发布的新值覆盖成旧快照）
+            if ([key hasPrefix:@"Import."] || [key hasPrefix:@"Assets."] || [key hasPrefix:@"Plugin."]) continue;
             id value = snapshot[key];
             if (value == nil) {
                 CFPreferencesSetAppValue((CFStringRef)key, NULL, (CFStringRef)MIAFXPrefsAppID);

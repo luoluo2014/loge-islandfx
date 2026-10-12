@@ -31,6 +31,7 @@
 #import <objc/runtime.h>
 #import <notify.h>
 #import <mach-o/dyld.h>
+#import <unistd.h>
 
 #import "MIAFXConfig.h"
 #import "MIAFXConstants.h"
@@ -65,6 +66,8 @@ extern void MSHookMessageEx(Class _class, SEL message, IMP hook, IMP *old);
 + (MIAFXVideoBackground *)backgroundForSurface:(UIView *)surface;
 + (void)consumePendingImports;
 + (void)publishAssets;
++ (void)publishHeartbeat;
++ (void)startDeliveryEngine;
 - (void)handleTrigger:(NSString *)reason;
 - (void)stop;
 @end
@@ -318,41 +321,48 @@ static void MIAFXDyldImageCallback(const struct mach_header *mhp, intptr_t vmadd
 
 #pragma mark - 素材投递（CFPreferences → 真实 Videos 目录）
 
-/// 消费设置端暂存的待导入视频，落入插件可读的真实目录，并发布素材清单
+/// 消费设置端暂存的待导入视频，落入插件可读的真实目录，并发布素材清单。
+/// 全链路逐步记诊断：任何一环断裂都能从 video-diag.log 里定位。
 + (void)consumePendingImports {
-    // 先同步一次域，确保读到设置端刚落盘的值
+    // 先同步一次域：既确保读到设置端刚落盘的值，也强制作废本进程的 CFPreferences 缓存
     MIAFXPrefsSynchronize();
     NSArray *pending = MIAFXPrefsObject(MIAFXPrefsKeyPendingImports);
     if (![pending isKindOfClass:NSArray.class] || pending.count == 0) return;
 
+    MIAFXDiag(@"投递：收到 %lu 个待导入文件", (unsigned long)pending.count);
+
     NSString *directory = MIAFXVideosDirectory();
     NSError *error = nil;
     if (![[NSFileManager defaultManager] createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions:@0755} error:&error]) {
-        MIAFXDiag(@"创建 Videos 目录失败：%@", error.localizedDescription ?: @"未知");
+        MIAFXDiag(@"投递失败：创建 Videos 目录 %@ 出错：%@", directory, error.localizedDescription ?: @"未知");
         return;
     }
     BOOL changed = NO;
     for (NSString *name in pending) {
         if (![name isKindOfClass:NSString.class] || name.length == 0) continue;
         NSString *safeName = name.lastPathComponent;
-        NSData *data = MIAFXPrefsObject([MIAFXPrefsKeyImportBlobPrefix stringByAppendingString:name]);
-        if (![data isKindOfClass:NSData.class]) {
-            MIAFXDiag(@"待导入 %@ 的数据缺失，跳过", safeName);
+        NSString *blobKey = [MIAFXPrefsKeyImportBlobPrefix stringByAppendingString:name];
+        NSData *data = MIAFXPrefsObject(blobKey);
+        if (![data isKindOfClass:NSData.class] || data.length == 0) {
+            // 数据缺失（设置端没写进来 / 域没同步过来）：丢掉这条，避免反复重试同一失败项
+            MIAFXDiag(@"投递失败：%@ 的数据缺失（键 %@ 读不到 NSData），已从队列移除", safeName, blobKey);
+            MIAFXPrefsRemoveObject(blobKey);
             continue;
         }
         NSString *destination = [directory stringByAppendingPathComponent:safeName];
         if ([data writeToFile:destination atomically:YES]) {
             changed = YES;
-            MIAFXDiag(@"素材已投递到真实目录：%@（%lu KB）", safeName, (unsigned long)(data.length / 1024));
+            MIAFXDiag(@"投递成功：%@（%lu KB）→ %@", safeName, (unsigned long)(data.length / 1024), destination);
         } else {
-            MIAFXDiag(@"素材写入失败：%@", destination);
+            MIAFXDiag(@"投递失败：写入 %@ 出错（目录权限？）", destination);
         }
-        MIAFXPrefsRemoveObject([MIAFXPrefsKeyImportBlobPrefix stringByAppendingString:name]);
+        MIAFXPrefsRemoveObject(blobKey);
     }
     MIAFXPrefsSetObject(@[], MIAFXPrefsKeyPendingImports);
     MIAFXPrefsSynchronize();
     if (changed) {
         [MIAFXVideoBackground publishAssets];
+        [MIAFXVideoBackground publishHeartbeat];
         notify_post(MIAFX_NOTIFY_RELOAD);
     }
 }
@@ -373,6 +383,41 @@ static void MIAFXDyldImageCallback(const struct mach_header *mhp, intptr_t vmadd
     [assets sortUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:@"name" ascending:YES selector:@selector(localizedCaseInsensitiveCompare:)]]];
     MIAFXPrefsSetObject(assets, MIAFXPrefsKeyAssetsVideos);
     MIAFXPrefsSynchronize();
+}
+
+/// 发布心跳：设置端据此判断「插件是否加载、是否在读同一个 CFPreferences 域」。
+/// 没有这条，投递失败时无法区分「插件没跑」和「插件跑了但没收到」。
++ (void)publishHeartbeat {
+    NSDictionary *heartbeat = @{
+        @"at": @([[NSDate date] timeIntervalSince1970]),
+        @"atText": [[NSDate date] description],
+        @"version": MIAFX_PLUGIN_VERSION_STRING,
+        @"pid": @(getpid()),
+        @"dir": MIAFXVideosDirectory(),
+    };
+    MIAFXPrefsSetObject(heartbeat, MIAFXPrefsKeyHeartbeat);
+    MIAFXPrefsSynchronize();
+}
+
+/// 投递引擎：不依赖任何通知/触发，每 5 秒主动轮询一次待投递队列并刷新心跳。
+/// 通知跨进程丢失、灵动岛从未被触发、hook 安装失败——这些情况下轮询是最后的保底。
++ (void)startDeliveryEngine {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        MIAFXDiag(@"投递引擎启动：5 秒轮询 + 心跳");
+        // 启动即刻来一轮：SpringBoard 若在设置端导入之后才重启，开机就能把队列消费掉
+        [MIAFXVideoBackground consumePendingImports];
+        [MIAFXVideoBackground publishAssets];
+        [MIAFXVideoBackground publishHeartbeat];
+        dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+        if (timer == NULL) return;
+        dispatch_source_set_timer(timer, DISPATCH_TIME_NOW, 5.0 * NSEC_PER_SEC, 1.0 * NSEC_PER_SEC);
+        dispatch_source_set_event_handler(timer, ^{
+            [MIAFXVideoBackground consumePendingImports];
+            [MIAFXVideoBackground publishHeartbeat];
+        });
+        dispatch_resume(timer);
+    });
 }
 
 #pragma mark - 配置解析
@@ -620,8 +665,8 @@ void MIAFXVideoBackgroundStart(void) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         MIAFXDiag(@"视频背景模块启动，开始探测宿主类");
-        // 1) 先消费设置端暂存的视频（SpringBoard realm 与沙盒 App 不互通，文件必须由插件端落地）
-        [MIAFXVideoBackground consumePendingImports];
+        // 1) 投递引擎：5 秒轮询待投递队列 + 心跳（先消费一次，覆盖「SpringBoard 晚于导入才重启」的情况）
+        [MIAFXVideoBackground startDeliveryEngine];
         // 2) 安装懒加载 hook（类可能晚注册）
         MIAFXTryInstallHooks(YES);
         _dyld_register_func_for_add_image(MIAFXDyldImageCallback);

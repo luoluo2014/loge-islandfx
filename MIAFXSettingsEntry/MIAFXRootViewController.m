@@ -51,6 +51,8 @@
     [_toggle addTarget:self action:@selector(valueChanged:) forControlEvents:UIControlEventValueChanged];
     self.accessoryView = _toggle;
     self.selectionStyle = UITableViewCellSelectionStyleNone;
+    self.textLabel.font = [UIFont systemFontOfSize:16.0 weight:UIFontWeightRegular];
+    self.detailTextLabel.font = [UIFont systemFontOfSize:12.5 weight:UIFontWeightRegular];
     self.detailTextLabel.numberOfLines = 0;
     self.detailTextLabel.textColor = UIColor.secondaryLabelColor;
     self.textLabel.numberOfLines = 0;
@@ -69,13 +71,188 @@
 
 @end
 
+#pragma mark - 分段控件（自建 pill 样式：按标题内容比例分配宽度，杜绝等宽压缩）
+
+/// iOS 原生 UISegmentedControl 默认等宽分配段宽，长文案段（「自定义半径」「独立顶层窗口」）
+/// 会被横向挤压甚至缩字。这里自建：轨道 + 滑动 pill + 按内容比例分配宽度，字号自适应。
+@interface MIAFXPillSegmentedControl : UIControl
+@property (nonatomic, copy) NSArray<NSString *> *titles;
+@property (nonatomic) NSInteger selectedIndex;
+@property (nonatomic, copy, nullable) void (^onChange)(NSInteger index);
+@end
+
+@interface MIAFXPillSegmentedControl ()
+@property (nonatomic, strong) UIView *track;
+@property (nonatomic, strong) UIView *thumb;
+@property (nonatomic, strong) NSMutableArray<UIButton *> *buttons;
+@end
+
+@implementation MIAFXPillSegmentedControl
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (!self) return nil;
+    _buttons = [NSMutableArray array];
+    _selectedIndex = 0;
+
+    _track = [[UIView alloc] initWithFrame:CGRectZero];
+    _track.userInteractionEnabled = YES;
+    _track.layer.cornerRadius = 16.0;
+    _track.layer.masksToBounds = YES;
+    _track.backgroundColor = UIColor.tertiarySystemFillColor;
+    [self addSubview:_track];
+
+    _thumb = [[UIView alloc] initWithFrame:CGRectZero];
+    _thumb.layer.cornerRadius = 14.0;
+    _thumb.layer.masksToBounds = NO;
+    _thumb.layer.shadowColor = UIColor.blackColor.CGColor;
+    _thumb.layer.shadowOffset = CGSizeMake(0.0, 1.0);
+    _thumb.layer.shadowRadius = 2.0;
+    [_track addSubview:_thumb];
+
+    [self updateAppearance];
+    return self;
+}
+
+- (void)updateAppearance {
+    BOOL dark = (self.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark);
+    _thumb.backgroundColor = dark ? UIColor.systemGrayColor : UIColor.systemBackgroundColor;
+    _thumb.layer.shadowOpacity = dark ? 0.0f : 0.18f;
+    for (NSInteger index = 0; index < (NSInteger)self.buttons.count; index++) {
+        UIButton *button = self.buttons[(NSUInteger)index];
+        BOOL selected = (index == self.selectedIndex);
+        [button setTitleColor:selected ? UIColor.labelColor : UIColor.secondaryLabelColor
+                      forState:UIControlStateNormal];
+    }
+}
+
+- (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    [super traitCollectionDidChange:previousTraitCollection];
+    if (self.traitCollection.userInterfaceStyle != previousTraitCollection.userInterfaceStyle) {
+        [self updateAppearance];
+    }
+}
+
+- (void)setTitles:(NSArray<NSString *> *)titles {
+    _titles = [titles copy] ?: @[];
+    for (UIButton *button in self.buttons) [button removeFromSuperview];
+    [self.buttons removeAllObjects];
+    for (NSInteger index = 0; index < (NSInteger)self.titles.count; index++) {
+        UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
+        button.tag = index;
+        button.adjustsImageWhenHighlighted = NO;
+        button.titleLabel.font = [UIFont systemFontOfSize:13.0 weight:UIFontWeightSemibold];
+        [button setTitle:self.titles[(NSUInteger)index] forState:UIControlStateNormal];
+        [button addTarget:self action:@selector(tapped:) forControlEvents:UIControlEventTouchUpInside];
+        [self.track addSubview:button];
+        [self.buttons addObject:button];
+    }
+    if (self.selectedIndex >= (NSInteger)self.titles.count) self.selectedIndex = 0;
+    [self updateAppearance];
+    [self setNeedsLayout];
+}
+
+- (void)setSelectedIndex:(NSInteger)selectedIndex {
+    if (selectedIndex < 0 || selectedIndex >= (NSInteger)self.titles.count) return;
+    if (_selectedIndex == selectedIndex) return;
+    _selectedIndex = selectedIndex;
+    [self updateAppearance];
+    [self setNeedsLayout];
+    [UIView animateWithDuration:0.22
+                          delay:0.0
+         usingSpringWithDamping:0.82
+          initialSpringVelocity:0.0
+                        options:UIViewAnimationOptionCurveEaseInOut
+                     animations:^{
+        [self layoutIfNeeded];
+    } completion:nil];
+}
+
+- (void)tapped:(UIButton *)sender {
+    NSInteger index = sender.tag;
+    if (index == self.selectedIndex) return;
+    [self setSelectedIndex:index];
+    if (self.onChange) self.onChange(index);
+    [self sendActionsForControlEvents:UIControlEventValueChanged];
+}
+
+/// 字号逐级缩减直到总宽度放得下；仍放不下时均分（真机上的选项文案在几级内都可容）
+- (CGFloat)fontSizeFittingWidth:(CGFloat)availableWidth {
+    for (CGFloat size = 13.0; size >= 10.0; size -= 0.5) {
+        UIFont *font = [UIFont systemFontOfSize:size weight:UIFontWeightSemibold];
+        CGFloat total = 0.0;
+        for (NSString *title in self.titles) {
+            total += [title sizeWithAttributes:@{NSFontAttributeName: font}].width + 28.0;
+        }
+        if (total <= availableWidth) return size;
+    }
+    return 10.0;
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    self.track.frame = self.bounds;
+    if (self.titles.count == 0) return;
+
+    CGFloat available = CGRectGetWidth(self.bounds);
+    CGFloat fontSize = [self fontSizeFittingWidth:available];
+    UIFont *font = [UIFont systemFontOfSize:fontSize weight:UIFontWeightSemibold];
+
+    NSMutableArray<NSNumber *> *widths = [NSMutableArray arrayWithCapacity:self.titles.count];
+    CGFloat total = 0.0;
+    for (NSString *title in self.titles) {
+        CGFloat width = [title sizeWithAttributes:@{NSFontAttributeName: font}].width + 28.0;
+        if (width < 46.0) width = 46.0;
+        [widths addObject:@(width)];
+        total += width;
+    }
+    if (total > available) {
+        // 极端窄屏：均分（配合上面的字号缩减，正常机型不会走到这里）
+        CGFloat each = available / (CGFloat)self.titles.count;
+        for (NSUInteger index = 0; index < widths.count; index++) widths[index] = @(each);
+        total = available;
+    } else if (total < available) {
+        // 富余空间均摊，让轨道撑满单元格
+        CGFloat extra = (available - total) / (CGFloat)self.titles.count;
+        for (NSUInteger index = 0; index < widths.count; index++) {
+            widths[index] = @([widths[index] doubleValue] + extra);
+        }
+        total = available;
+    }
+
+    CGFloat x = 0.0;
+    for (NSUInteger index = 0; index < self.buttons.count; index++) {
+        UIButton *button = self.buttons[index];
+        CGFloat width = [widths[index] doubleValue];
+        button.frame = CGRectMake(x, 0.0, width, CGRectGetHeight(self.bounds));
+        button.titleLabel.font = font;
+        x += width;
+    }
+
+    UIButton *selected = (self.selectedIndex < (NSInteger)self.buttons.count) ? self.buttons[(NSUInteger)self.selectedIndex] : nil;
+    if (selected) {
+        self.thumb.frame = CGRectMake(selected.frame.origin.x + 2.0, 2.0,
+                                      selected.frame.size.width - 4.0, CGRectGetHeight(self.bounds) - 4.0);
+    }
+    [self.track bringSubviewToFront:self.thumb];
+}
+
+@end
+
 #pragma mark - 分段控件行
 
 @interface MIAFXSegmentedCell : UITableViewCell
-@property (nonatomic, strong) UISegmentedControl *segmented;
-@property (nonatomic, strong) UILabel *detailInfoLabel;
+@property (nonatomic, strong) MIAFXPillSegmentedControl *segmented;
 @property (nonatomic, strong, nullable) MIAFXSettingSpec *spec;
 @property (nonatomic, copy, nullable) void (^onChange)(MIAFXSettingSpec *spec, NSInteger index);
+- (void)setDetailText:(nullable NSString *)text;
+@end
+
+@interface MIAFXSegmentedCell ()
+@property (nonatomic, strong) UILabel *detailInfoLabel;
+@property (nonatomic, strong) NSLayoutConstraint *detailTopConstraint;
+@property (nonatomic, strong) NSLayoutConstraint *detailGapConstraint;
+@property (nonatomic, strong) NSLayoutConstraint *segmentedTopConstraint;
 @end
 
 @implementation MIAFXSegmentedCell
@@ -85,48 +262,61 @@
     if (!self) return nil;
     self.selectionStyle = UITableViewCellSelectionStyleNone;
     self.textLabel.numberOfLines = 0;
-    self.textLabel.font = [UIFont systemFontOfSize:15.5 weight:UIFontWeightSemibold];
+    self.textLabel.font = [UIFont systemFontOfSize:16.0 weight:UIFontWeightRegular];
 
-    UILabel *detailLabel = [self makeDetailLabel];
+    UILabel *detailLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+    detailLabel.numberOfLines = 0;
+    detailLabel.font = [UIFont systemFontOfSize:12.5 weight:UIFontWeightRegular];
+    detailLabel.textColor = UIColor.secondaryLabelColor;
+    detailLabel.translatesAutoresizingMaskIntoConstraints = NO;
     [self.contentView addSubview:detailLabel];
     _detailInfoLabel = detailLabel;
 
-    _segmented = [[UISegmentedControl alloc] initWithItems:@[]];
-    _segmented.translatesAutoresizingMaskIntoConstraints = NO;
-    [_segmented addTarget:self action:@selector(valueChanged:) forControlEvents:UIControlEventValueChanged];
-    [self.contentView addSubview:_segmented];
+    MIAFXPillSegmentedControl *segmented = [[MIAFXPillSegmentedControl alloc] initWithFrame:CGRectZero];
+    segmented.translatesAutoresizingMaskIntoConstraints = NO;
+    __weak typeof(self) weakSelf = self;
+    segmented.onChange = ^(NSInteger index) {
+        // 只弱引用 self：块被子视图持有，避免 cell → segmented → block → cell 保留环
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (strongSelf.onChange && strongSelf.spec) strongSelf.onChange(strongSelf.spec, index);
+    };
+    [self.contentView addSubview:segmented];
+    _segmented = segmented;
 
-    detailLabel.translatesAutoresizingMaskIntoConstraints = NO;
     UILayoutGuide *margins = self.contentView.layoutMarginsGuide;
+    _detailTopConstraint = [detailLabel.topAnchor constraintEqualToAnchor:margins.topAnchor constant:6.0];
+    _detailGapConstraint = [segmented.topAnchor constraintEqualToAnchor:detailLabel.bottomAnchor constant:8.0];
+    _segmentedTopConstraint = [segmented.topAnchor constraintEqualToAnchor:margins.topAnchor constant:4.0];
     [NSLayoutConstraint activateConstraints:@[
-        [detailLabel.topAnchor constraintEqualToAnchor:margins.topAnchor constant:4.0],
+        _detailTopConstraint,
+        _detailGapConstraint,
         [detailLabel.leadingAnchor constraintEqualToAnchor:margins.leadingAnchor],
         [detailLabel.trailingAnchor constraintEqualToAnchor:margins.trailingAnchor],
-        [_segmented.topAnchor constraintEqualToAnchor:detailLabel.bottomAnchor constant:8.0],
-        [_segmented.leadingAnchor constraintEqualToAnchor:margins.leadingAnchor],
-        [_segmented.trailingAnchor constraintEqualToAnchor:margins.trailingAnchor],
-        [_segmented.bottomAnchor constraintEqualToAnchor:margins.bottomAnchor constant:-8.0],
+        [segmented.leadingAnchor constraintEqualToAnchor:margins.leadingAnchor],
+        [segmented.trailingAnchor constraintEqualToAnchor:margins.trailingAnchor],
+        [segmented.bottomAnchor constraintEqualToAnchor:margins.bottomAnchor constant:-8.0],
+        [segmented.heightAnchor constraintEqualToConstant:32.0],
     ]];
+    [self setDetailText:nil];
     return self;
 }
 
-- (UILabel *)makeDetailLabel {
-    UILabel *label = [[UILabel alloc] initWithFrame:CGRectZero];
-    label.numberOfLines = 0;
-    label.font = [UIFont systemFontOfSize:12.5 weight:UIFontWeightRegular];
-    label.textColor = UIColor.secondaryLabelColor;
-    return label;
-}
-
-- (void)valueChanged:(UISegmentedControl *)sender {
-    if (self.spec && self.onChange) self.onChange(self.spec, sender.selectedSegmentIndex);
+/// 无描述时收起描述行，避免留下空白缝隙
+- (void)setDetailText:(NSString *)text {
+    self.detailInfoLabel.text = text;
+    BOOL hasDetail = text.length > 0;
+    self.detailInfoLabel.hidden = !hasDetail;
+    _detailTopConstraint.active = hasDetail;
+    _detailGapConstraint.active = hasDetail;
+    _segmentedTopConstraint.active = !hasDetail;
 }
 
 - (void)prepareForReuse {
     [super prepareForReuse];
     self.spec = nil;
     self.onChange = nil;
-    [self.segmented removeAllSegments];
+    self.segmented.titles = @[];
+    [self setDetailText:nil];
 }
 
 @end
@@ -142,7 +332,9 @@
     self = [super initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:reuseIdentifier];
     if (!self) return nil;
     self.textLabel.numberOfLines = 0;
+    self.textLabel.font = [UIFont systemFontOfSize:16.0 weight:UIFontWeightRegular];
     self.detailTextLabel.numberOfLines = 0;
+    self.detailTextLabel.font = [UIFont systemFontOfSize:12.5 weight:UIFontWeightRegular];
     self.detailTextLabel.textColor = UIColor.secondaryLabelColor;
     self.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     return self;
@@ -293,6 +485,7 @@
 
 @interface MIAFXDiagnosticsViewController ()
 @property (nonatomic, strong) NSArray<NSDictionary<NSString *, id> *> *rows;   // 每个元素：{title, value}
+@property (nonatomic, strong) NSArray<NSDictionary<NSString *, id> *> *deliveryRows;   // 插件与投递
 @property (nonatomic, copy) NSArray<NSString *> *pathRows;
 @end
 
@@ -349,30 +542,89 @@
         [NSString stringWithFormat:@"诊断文件：%@", launcher.diagnosticsFilePath],
         [NSString stringWithFormat:@"日志：%@", launcher.logFilePath],
     ];
+    self.deliveryRows = [self buildDeliveryRows];
     [self.tableView reloadData];
+}
+
+/// 插件与投递状态：心跳、读回校验、暂存队列、暂存数据、素材清单
+- (NSArray<NSDictionary<NSString *, id> *> *)buildDeliveryRows {
+    NSMutableArray<NSDictionary<NSString *, id> *> *rows = [NSMutableArray array];
+
+    MIAFXPrefsSynchronize();
+    id heartbeatValue = MIAFXPrefsObject(MIAFXPrefsKeyHeartbeat);
+    NSString *heartbeatText = @"无心跳记录（插件未加载或未启动）";
+    if ([heartbeatValue isKindOfClass:NSDictionary.class]) {
+        NSDictionary *heartbeat = (NSDictionary *)heartbeatValue;
+        NSNumber *at = [heartbeat[@"at"] isKindOfClass:NSNumber.class] ? heartbeat[@"at"] : nil;
+        NSString *version = [heartbeat[@"version"] isKindOfClass:NSString.class] ? heartbeat[@"version"] : @"?";
+        if (at != nil) {
+            NSInteger ago = (NSInteger)([[NSDate date] timeIntervalSince1970] - at.doubleValue);
+            if (ago < 0) ago = 0;
+            heartbeatText = ago > 30 ? [NSString stringWithFormat:@"离线（最后心跳 %ld 秒前，版本 %@）", (long)ago, version]
+                                     : [NSString stringWithFormat:@"在线（%ld 秒前，版本 %@，PID %@）", (long)ago, version, heartbeat[@"pid"] ?: @"?"];
+        }
+    }
+    [rows addObject:@{@"title": @"插件心跳", @"value": heartbeatText}];
+
+    id pending = MIAFXPrefsObject(MIAFXPrefsKeyPendingImports);
+    NSString *pendingText = @"（无）";
+    if ([pending isKindOfClass:NSArray.class] && ((NSArray *)pending).count > 0) {
+        pendingText = [((NSArray *)pending) componentsJoinedByString:@", "];
+    }
+    [rows addObject:@{@"title": @"待投递暂存", @"value": pendingText}];
+
+    NSArray<NSString *> *keys = MIAFXPrefsAllKeys();
+    NSMutableArray<NSString *> *blobs = [NSMutableArray array];
+    NSMutableArray<NSString *> *assets = [NSMutableArray array];
+    for (NSString *key in keys) {
+        if ([key hasPrefix:MIAFXPrefsKeyImportBlobPrefix]) {
+            id blob = MIAFXPrefsObject(key);
+            NSUInteger kb = [blob isKindOfClass:NSData.class] ? ((NSData *)blob).length / 1024 : 0;
+            [blobs addObject:[NSString stringWithFormat:@"%@（%lu KB）", [key substringFromIndex:MIAFXPrefsKeyImportBlobPrefix.length], (unsigned long)kb]];
+        } else if ([key isEqualToString:MIAFXPrefsKeyAssetsVideos]) {
+            id value = MIAFXPrefsObject(key);
+            if ([value isKindOfClass:NSArray.class]) {
+                for (id item in (NSArray *)value) {
+                    if ([item isKindOfClass:NSDictionary.class] && [item[@"name"] isKindOfClass:NSString.class]) {
+                        [assets addObject:item[@"name"]];
+                    }
+                }
+            }
+        }
+    }
+    [rows addObject:@{@"title": @"暂存数据（Import.Blob.*）", @"value": blobs.count > 0 ? [blobs componentsJoinedByString:@", "] : @"（无）"}];
+    [rows addObject:@{@"title": @"插件已发布素材", @"value": assets.count > 0 ? [NSString stringWithFormat:@"%lu 个：%@", (unsigned long)assets.count, [assets componentsJoinedByString:@", "]] : @"（空：插件未加载或从未落地素材）"}];
+    [rows addObject:@{@"title": @"真实素材目录", @"value": [MIAFXFilzaLauncher sharedLauncher].videosDirectory}];
+    return rows;
 }
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
     (void)tableView;
-    return 3;   // 运行状态 / 路径 / 操作
+    return 4;   // 运行状态 / 关键路径 / 插件与投递 / 操作
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     (void)tableView;
     if (section == 0) return (NSInteger)self.rows.count;
     if (section == 1) return (NSInteger)self.pathRows.count;
+    if (section == 2) return (NSInteger)self.deliveryRows.count;
     return 4;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
     (void)tableView;
-    return section == 0 ? @"运行状态" : (section == 1 ? @"关键路径" : @"操作");
+    if (section == 0) return @"运行状态";
+    if (section == 1) return @"关键路径";
+    if (section == 2) return @"插件与投递";
+    return @"操作";
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"diag" forIndexPath:indexPath];
     cell.detailTextLabel.numberOfLines = 0;
+    cell.detailTextLabel.font = [UIFont systemFontOfSize:12.5 weight:UIFontWeightRegular];
     cell.textLabel.numberOfLines = 0;
+    cell.textLabel.font = [UIFont systemFontOfSize:16.0 weight:UIFontWeightRegular];
     cell.accessoryType = UITableViewCellAccessoryNone;
     if (indexPath.section == 0) {
         NSDictionary *row = self.rows[(NSUInteger)indexPath.row];
@@ -383,6 +635,11 @@
         cell.textLabel.text = self.pathRows[(NSUInteger)indexPath.row];
         cell.detailTextLabel.text = nil;
         cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+    } else if (indexPath.section == 2) {
+        NSDictionary *row = self.deliveryRows[(NSUInteger)indexPath.row];
+        cell.textLabel.text = row[@"title"];
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"%@", row[@"value"]];
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
     } else {
         cell.detailTextLabel.text = nil;
         NSArray<NSString *> *actions = @[@"重置启动保护计数", @"重新扫描素材", @"复制全部路径", @"Respring（重载 SpringBoard）"];
@@ -401,7 +658,7 @@
         [launcher copyToPasteboard:value hint:@"路径已复制" fromViewController:self];
         return;
     }
-    if (indexPath.section != 2) return;
+    if (indexPath.section != 3) return;
     switch (indexPath.row) {
         case 0: [self resetProtection]; break;
         case 1: [self rescan]; break;
@@ -483,6 +740,7 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
 @property (nonatomic, strong, nullable) NSURL *currentExportURL;
 @property (nonatomic, copy, nullable) NSString *pendingImportSpecKey;
 @property (nonatomic, copy, nullable) NSString *pendingPhotoSpecKey;
+@property (nonatomic) NSInteger lastImportReadBackBytes;   // 最近一次导入的读回校验：字节数，-1 表示通道异常
 @end
 
 @implementation MIAFXRootViewController
@@ -743,14 +1001,11 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
                 MIAFXSegmentedCell *cell = [tableView dequeueReusableCellWithIdentifier:kMIAFXSegmentedCellIdentifier forIndexPath:indexPath];
                 cell.spec = spec;
                 cell.textLabel.text = spec.title;
-                cell.detailInfoLabel.text = [self detailLineForSpec:spec];
-                [cell.segmented removeAllSegments];
-                NSUInteger index = 0;
-                for (MIAFXSettingOption *option in spec.options) {
-                    [cell.segmented insertSegmentWithTitle:option.title atIndex:index animated:NO];
-                    index += 1;
-                }
-                cell.segmented.selectedSegmentIndex = [self indexOfCurrentValueInSpec:spec];
+                [cell setDetailText:[self detailLineForSpec:spec]];
+                NSMutableArray<NSString *> *titles = [NSMutableArray arrayWithCapacity:spec.options.count];
+                for (MIAFXSettingOption *option in spec.options) [titles addObject:option.title ?: @""];
+                cell.segmented.titles = titles;
+                cell.segmented.selectedIndex = [self indexOfCurrentValueInSpec:spec];
                 __weak typeof(self) weakSelf = self;
                 cell.onChange = ^(MIAFXSettingSpec *changed, NSInteger selected) {
                     [weakSelf handleEnumSelectionForSpec:changed index:selected];
@@ -760,10 +1015,8 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
             MIAFXValueCell *cell = [tableView dequeueReusableCellWithIdentifier:kMIAFXValueCellIdentifier forIndexPath:indexPath];
             cell.textLabel.text = spec.title;
             cell.textLabel.textColor = UIColor.labelColor;
-            cell.detailTextLabel.text = [NSString stringWithFormat:@"%@\n当前：%@\n%@",
-                                         spec.specDescription ?: @"",
-                                         [spec valueDisplayString],
-                                         [spec rangeDescriptionString]];
+            cell.detailTextLabel.attributedText = [self attributedValueDetailWithDescription:spec.specDescription
+                                                                                     value:[spec valueDisplayString]];
             return cell;
         }
         case MIAFXSettingKindText:
@@ -772,7 +1025,8 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
             cell.textLabel.text = spec.title;
             cell.textLabel.textColor = UIColor.labelColor;
             NSString *value = [spec valueDisplayString];
-            cell.detailTextLabel.text = [NSString stringWithFormat:@"%@\n当前：%@", spec.specDescription ?: @"", value];
+            cell.detailTextLabel.attributedText = [self attributedValueDetailWithDescription:spec.specDescription
+                                                                                     value:value];
             return cell;
         }
         case MIAFXSettingKindAction: {
@@ -786,6 +1040,26 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
     UITableViewCell *fallback = [tableView dequeueReusableCellWithIdentifier:kMIAFXValueCellIdentifier forIndexPath:indexPath];
     fallback.textLabel.text = spec.title;
     return fallback;
+}
+
+/// 简约两行式描述：第一行灰色说明，第二行「当前：值」（值用主色突出，不再堆三行文字）
+- (NSAttributedString *)attributedValueDetailWithDescription:(nullable NSString *)description
+                                                       value:(nullable NSString *)value {
+    NSMutableAttributedString *result = [NSMutableAttributedString new];
+    UIFont *detailFont = [UIFont systemFontOfSize:12.5 weight:UIFontWeightRegular];
+    if (description.length > 0) {
+        [result appendAttributedString:[[NSAttributedString alloc] initWithString:description
+                                                                       attributes:@{NSFontAttributeName: detailFont,
+                                                                                    NSForegroundColorAttributeName: UIColor.secondaryLabelColor}]];
+    }
+    if (value.length > 0) {
+        if (result.length > 0) [result appendAttributedString:[[NSAttributedString alloc] initWithString:@"\n"]];
+        NSString *line = [NSString stringWithFormat:@"当前：%@", value];
+        [result appendAttributedString:[[NSAttributedString alloc] initWithString:line
+                                                                       attributes:@{NSFontAttributeName: [UIFont systemFontOfSize:13.0 weight:UIFontWeightRegular],
+                                                                                    NSForegroundColorAttributeName: UIColor.labelColor}]];
+    }
+    return result;
 }
 
 - (NSString *)detailLineForSpec:(MIAFXSettingSpec *)spec {
@@ -1306,6 +1580,18 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
     [out appendFormat:@"沙盒数据目录（仅本进程可见）：%@\n", MIAFXDataDirectory()];
     [out appendFormat:@"真实数据目录（插件/Filza 视角）：%@\n\n", [MIAFXFilzaLauncher sharedLauncher].dataDirectory];
 
+    [out appendString:@"----- 插件心跳（每 5 秒由插件刷新）-----\n"];
+    NSDictionary *heartbeat = [self pluginHeartbeat];
+    if (heartbeat == nil) {
+        [out appendString:@"无记录：插件未加载、未启动，或读不到共享域\n"];
+    } else {
+        NSNumber *at = [heartbeat[@"at"] isKindOfClass:NSNumber.class] ? heartbeat[@"at"] : nil;
+        NSInteger ago = at != nil ? (NSInteger)([[NSDate date] timeIntervalSince1970] - at.doubleValue) : -1;
+        [out appendFormat:@"%@（%ld 秒前）版本=%@ PID=%@ 目录=%@\n",
+         ago >= 0 && ago <= 30 ? @"在线" : @"离线", (long)ago,
+         heartbeat[@"version"] ?: @"?", heartbeat[@"pid"] ?: @"?", heartbeat[@"dir"] ?: @"?"];
+    }
+
     [out appendString:@"----- video-diag.log（视频背景诊断，尾部）-----\n"];
     [out appendString:[self tailOfFileAtPath:MIAFXVideoDiagPath() maxBytes:120 * 1024] ?: @"（暂无：插件可能未加载或从未触发灵动岛）"];
     [out appendString:@"\n\n----- miafx.log（运行日志，尾部）-----\n"];
@@ -1353,6 +1639,15 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
     [out appendString:@"\n----- 待投递暂存（Import.Pending）-----\n"];
     NSArray *pending = [self publishedPendingImports] ?: @[];
     [out appendString:pending.count > 0 ? [pending componentsJoinedByString:@", "] : @"（无）"];
+    NSMutableArray<NSString *> *blobLines = [NSMutableArray array];
+    for (NSString *key in MIAFXPrefsAllKeys()) {
+        if (![key hasPrefix:MIAFXPrefsKeyImportBlobPrefix]) continue;
+        id blob = MIAFXPrefsObject(key);
+        NSUInteger kb = [blob isKindOfClass:NSData.class] ? ((NSData *)blob).length / 1024 : 0;
+        [blobLines addObject:[NSString stringWithFormat:@"%@（%lu KB）", [key substringFromIndex:MIAFXPrefsKeyImportBlobPrefix.length], (unsigned long)kb]];
+    }
+    [out appendString:@"\n----- 暂存数据（Import.Blob.*，插件消费后自动清除）-----\n"];
+    [out appendString:blobLines.count > 0 ? [blobLines componentsJoinedByString:@", "] : @"（无）"];
     [out appendString:@"\n===== 结束 ====="];
     return out;
 }
@@ -1515,8 +1810,7 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
             __weak typeof(self) weakSelf = self;
             [self verifyStagedVideo:name completion:^(BOOL delivered) {
                 if (delivered) return;
-                [weakSelf showErrorAlert:[NSString stringWithFormat:@"插件尚未收到「%@」。\n请打开一次灵动岛后重试，或改用 Filza 手动放置文件到：\n%@",
-                                          name, [MIAFXFilzaLauncher sharedLauncher].videosDirectory]];
+                [weakSelf reportDeliveryFailureForName:name];
             }];
             return;
         }
@@ -1553,8 +1847,9 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
 ///       因此这里不扫本地目录，改读插件端通过 CFPreferences 发布的清单。
 - (void)presentVideoDirectoryPickerForSpec:(MIAFXSettingSpec *)spec {
     NSArray<NSDictionary *> *assets = [self publishedVideoAssets];
+    NSString *status = [self isPluginOnline] ? @"插件在线" : @"插件离线（导入后需触发一次灵动岛）";
     UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"选择视频素材"
-                                                                  message:[NSString stringWithFormat:@"灵动岛可用素材（%lu 个）", (unsigned long)assets.count]
+                                                                  message:[NSString stringWithFormat:@"灵动岛可用素材（%lu 个）· %@", (unsigned long)assets.count, status]
                                                            preferredStyle:UIAlertControllerStyleActionSheet];
     __weak typeof(self) weakSelf = self;
     if (assets.count == 0) {
@@ -1568,6 +1863,8 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
             if (name.length == 0) continue;
             NSNumber *size = [asset[@"size"] isKindOfClass:NSNumber.class] ? asset[@"size"] : nil;
             NSString *title = size ? [NSString stringWithFormat:@"%@（%@ KB）", name, size] : name;
+            BOOL localOnly = [asset[@"local"] isKindOfClass:NSNumber.class] && [asset[@"local"] boolValue];
+            if (localOnly) title = [title stringByAppendingString:@" · 本地缓存"];
             if ([name isEqualToString:current]) title = [title stringByAppendingString:@"  ✓"];
             [sheet addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
                 // 只存文件名：插件端会解析到真实 Videos 目录
@@ -1594,10 +1891,9 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
 
 #pragma mark - 素材投递（设置端 → CFPreferences → 插件端真实目录）
 
-/// 插件端发布的真实目录清单（Assets.Videos）。
-/// 兜底：若跨进程偏好域在本进程读不到（极少数 RootHide 配置下沙盒读不到全局域），
-///       再把本进程可见的容器目录也列出来——万一 RootHide 做了重定向，插件写的文件
-///       就能从这里看到，用户照样能选。
+/// 插件端发布的真实目录清单（Assets.Videos）+ 本进程容器副本（兜底/救援）。
+/// 两条来源合并展示：插件在线时以其发布为准；容器里多出来的旧副本标注「本地缓存」，
+/// 用户仍可选它（插件会按文件名去真实目录找），也可经 Filza 手动转存。
 - (NSArray<NSDictionary *> *)publishedVideoAssets {
     MIAFXPrefsSynchronize();
     id value = MIAFXPrefsObject(MIAFXPrefsKeyAssetsVideos);
@@ -1609,21 +1905,48 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
             if (name.length > 0) byName[name] = item;
         }
     }
-    if (byName.count == 0) {
-        NSString *directory = [[MIAFXFilzaLauncher sharedLauncher] legacyContainerVideosDirectory];
-        NSFileManager *manager = [NSFileManager defaultManager];
-        NSSet<NSString *> *extensions = [NSSet setWithArray:@[@"mp4", @"mov", @"m4v", @"mpg", @"mpeg", @"3gp", @"avi", @"mkv", @"webm"]];
-        for (NSString *name in [manager contentsOfDirectoryAtPath:directory error:nil] ?: @[]) {
-            if (![extensions containsObject:name.pathExtension.lowercaseString]) continue;
-            NSString *full = [directory stringByAppendingPathComponent:name];
-            BOOL isDirectory = NO;
-            if (![manager fileExistsAtPath:full isDirectory:&isDirectory] || isDirectory) continue;
-            NSDictionary *attributes = [manager attributesOfItemAtPath:full error:nil];
-            byName[name] = @{ @"name": name,
-                              @"size": @([attributes[NSFileSize] unsignedLongLongValue] / 1024) };
-        }
+    NSString *directory = [[MIAFXFilzaLauncher sharedLauncher] legacyContainerVideosDirectory];
+    NSFileManager *manager = [NSFileManager defaultManager];
+    NSSet<NSString *> *extensions = [NSSet setWithArray:@[@"mp4", @"mov", @"m4v", @"mpg", @"mpeg", @"3gp", @"avi", @"mkv", @"webm"]];
+    for (NSString *name in [manager contentsOfDirectoryAtPath:directory error:nil] ?: @[]) {
+        if (![extensions containsObject:name.pathExtension.lowercaseString]) continue;
+        if (byName[name] != nil) continue;   // 插件已发布同名素材，以插件为准
+        NSString *full = [directory stringByAppendingPathComponent:name];
+        BOOL isDirectory = NO;
+        if (![manager fileExistsAtPath:full isDirectory:&isDirectory] || isDirectory) continue;
+        NSDictionary *attributes = [manager attributesOfItemAtPath:full error:nil];
+        byName[name] = @{ @"name": name,
+                          @"size": @([attributes[NSFileSize] unsignedLongLongValue] / 1024),
+                          @"local": @YES };
     }
     return [byName.allValues sortedArrayUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:@"name" ascending:YES selector:@selector(localizedCaseInsensitiveCompare:)]]];
+}
+
+/// 插件心跳：设置端据此判断「插件是否加载、是否在读同一个 CFPreferences 域」。
+/// 插件每 5 秒刷新一次，超过 30 秒没有更新即视为离线。
+- (NSDictionary *)pluginHeartbeat {
+    MIAFXPrefsSynchronize();
+    id value = MIAFXPrefsObject(MIAFXPrefsKeyHeartbeat);
+    return [value isKindOfClass:NSDictionary.class] ? value : nil;
+}
+
+- (BOOL)isPluginOnline {
+    NSDictionary *heartbeat = [self pluginHeartbeat];
+    NSNumber *at = [heartbeat[@"at"] isKindOfClass:NSNumber.class] ? heartbeat[@"at"] : nil;
+    if (at == nil) return NO;
+    return ([[NSDate date] timeIntervalSince1970] - at.doubleValue) < 30.0;
+}
+
+/// 供 UI 展示的心跳状态文本
+- (NSString *)pluginStatusText {
+    NSDictionary *heartbeat = [self pluginHeartbeat];
+    NSNumber *at = [heartbeat[@"at"] isKindOfClass:NSNumber.class] ? heartbeat[@"at"] : nil;
+    if (at == nil) return @"无心跳记录（插件未加载或未启动）";
+    NSInteger ago = (NSInteger)([[NSDate date] timeIntervalSince1970] - at.doubleValue);
+    NSString *version = [heartbeat[@"version"] isKindOfClass:NSString.class] ? heartbeat[@"version"] : @"?";
+    if (ago < 0) ago = 0;
+    if (ago > 30) return [NSString stringWithFormat:@"离线（最后心跳 %ld 秒前，版本 %@）", (long)ago, version];
+    return [NSString stringWithFormat:@"在线（%ld 秒前，版本 %@，PID %@）", (long)ago, version, heartbeat[@"pid"] ?: @"?"];
 }
 
 /// 设置端主动请求插件刷新清单（发一条重载通知，插件收到后会重新扫描并发布）
@@ -1682,8 +2005,30 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
     MIAFXPrefsSetObject(data, [MIAFXPrefsKeyImportBlobPrefix stringByAppendingString:name]);
     MIAFXPrefsSetObject(pending, MIAFXPrefsKeyPendingImports);
     MIAFXPrefsSynchronize();
-    MIAFXDiagLog(@"设置端已暂存视频 %@（%lu KB），等待插件落地", name, (unsigned long)(data.length / 1024));
+
+    // 写后立刻读回校验：确认 blob 真的落进了跨进程共享域（而不是只进了本进程缓存/容器域）。
+    // 读不到同等长度，说明 CFPreferences 通道异常，此时保留一份沙盒副本作为 Filza 手动救援的素材。
+    NSData *readBack = MIAFXPrefsObject([MIAFXPrefsKeyImportBlobPrefix stringByAppendingString:name]);
+    BOOL readBackOK = [readBack isKindOfClass:NSData.class] && readBack.length == data.length;
+    self.lastImportReadBackBytes = readBackOK ? (NSInteger)data.length : -1;
+    if (readBackOK) {
+        MIAFXDiagLog(@"设置端已暂存视频 %@（%lu KB），读回校验通过，等待插件落地", name, (unsigned long)(data.length / 1024));
+    } else {
+        MIAFXDiagLog(@"设置端暂存视频 %@ 后读回校验失败（期望 %lu KB，读回 %ld）", name,
+                     (unsigned long)(data.length / 1024), (long)([readBack isKindOfClass:NSData.class] ? ((NSData *)readBack).length : -1));
+        [self stashContainerCopyOfData:data name:name];
+    }
     return name;
+}
+
+/// 沙盒容器兜底副本：跨进程域异常时，用户仍可经 Filza 把它复制到真实素材目录
+- (void)stashContainerCopyOfData:(NSData *)data name:(NSString *)name {
+    NSString *directory = [[MIAFXFilzaLauncher sharedLauncher] legacyContainerVideosDirectory];
+    if (!MIAFXEnsureDirectory(directory, nil)) return;
+    NSString *destination = [directory stringByAppendingPathComponent:name.lastPathComponent];
+    if ([data writeToFile:destination atomically:YES]) {
+        MIAFXDiagLog(@"已在沙盒容器保留副本：%@", destination);
+    }
 }
 
 - (NSArray *)publishedPendingImports {
@@ -1703,7 +2048,8 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
     return result;
 }
 
-/// 轮询插件端发布的清单，确认暂存的素材已经落地；用于给用户一个明确的成功/失败反馈
+/// 轮询插件端发布的清单，确认暂存的素材已经落地；用于给用户一个明确的成功/失败反馈。
+/// 插件端每 5 秒轮询一次投递队列，因此这里给到 20 秒的超时窗口。
 - (void)verifyStagedVideo:(NSString *)name completion:(void (^)(BOOL delivered))completion {
     __block NSUInteger attempts = 0;
     __weak typeof(self) weakSelf = self;
@@ -1713,9 +2059,11 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
         attempts += 1;
         BOOL found = NO;
         for (NSDictionary *asset in [weakSelf publishedVideoAssets]) {
+            // 只认插件发布的条目；沙盒容器里的同名副本不算投递成功
+            if ([asset[@"local"] isKindOfClass:NSNumber.class] && [asset[@"local"] boolValue]) continue;
             if ([[asset[@"name"] description] isEqualToString:name]) { found = YES; break; }
         }
-        if (found || attempts >= 12) {
+        if (found || attempts >= 20) {
             dispatch_source_cancel(timer);
             if (completion) completion(found);
         }
@@ -1723,11 +2071,31 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
     dispatch_resume(timer);
 }
 
+/// 投递失败时给出可操作的诊断：先分清「插件没跑」和「插件跑了但没收到」，再给对应解法
+- (void)reportDeliveryFailureForName:(NSString *)name {
+    NSMutableString *message = [NSMutableString string];
+    if (self.lastImportReadBackBytes < 0) {
+        [message appendString:@"系统偏好通道写入校验未通过，文件未能进入跨进程共享域。\n\n"];
+    }
+    if (![self isPluginOnline]) {
+        [message appendString:@"插件当前无响应（SpringBoard 里可能尚未加载，或重启后还没稳定）。\n\n"];
+    } else {
+        [message appendString:@"插件在线，但暂时没有收到这个文件。\n\n"];
+    }
+    [message appendString:@"请依次尝试：\n"
+                        "1. 播放一首音乐或插一次充电，触发一次灵动岛；\n"
+                        "2. 回到本页等 5～10 秒（插件每 5 秒自动检查一次投递队列）；\n"
+                        "3. 仍不行就 Respring，或在 Filza 中把文件放到：\n"];
+    [message appendString:[MIAFXFilzaLauncher sharedLauncher].videosDirectory];
+    [message appendString:@"\n\n详细过程可在「诊断反馈 → 查看诊断日志」中看到（video-diag.log）。"];
+    [self showErrorAlertOnMain:[NSString stringWithFormat:@"插件尚未收到「%@」。\n\n%@", name, message]];
+}
+
 /// 迁移旧版：配置里指向沙盒容器的绝对路径，且文件确实在容器里 → 暂存为 blob，路径改写为文件名
 - (void)migrateLegacyVideoPaths {
     NSArray<NSString *> *keys = @[@"Compact.Video.Path", @"Expanded.Video.Path"];
     MIAFXConfig *config = [MIAFXConfig sharedConfig];
-    NSMutableArray<NSString *> *staged = [NSMutableArray array];
+    BOOL changed = NO;
     for (NSString *key in keys) {
         NSString *raw = [config stringForKey:key];
         if (raw.length == 0) continue;
@@ -1739,17 +2107,18 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
         if (![[NSFileManager defaultManager] fileExistsAtPath:raw]) {
             // 容器里的文件已不可见（插件从未读到过）：改写成文件名，让插件按名字去真实目录找
             [[MIAFXSettingsCatalog sharedCatalog] stageObject:raw.lastPathComponent forSpec:spec];
+            changed = YES;
             continue;
         }
         NSString *name = [self stageVideoForImportFromURL:url suggestedName:raw.lastPathComponent];
         if (name.length > 0) {
             [[MIAFXSettingsCatalog sharedCatalog] stageObject:name forSpec:spec];
-            [staged addObject:name];
+            changed = YES;
         }
     }
-    if (staged.count > 0) {
+    if (changed) {
         [self commitAndRefresh];
-        MIAFXDiagLog(@"已迁移 %lu 个旧版容器内视频", (unsigned long)staged.count);
+        MIAFXDiagLog(@"旧版容器内视频路径已迁移为文件名制");
     }
 }
 
@@ -1798,10 +2167,7 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
             }
             [weakSelf verifyStagedVideo:name completion:^(BOOL delivered) {
                 if (delivered) return;
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [weakSelf showErrorAlert:[NSString stringWithFormat:@"插件尚未收到「%@」。\n可能原因：灵动岛插件未加载，或 SpringBoard 还没被触发。\n请打开一次灵动岛（播放音乐/充电动画）后重试；也可用 Filza 手动把文件放到：\n%@",
-                                              name, [MIAFXFilzaLauncher sharedLauncher].videosDirectory]];
-                });
+                [weakSelf reportDeliveryFailureForName:name];
             }];
         });
     }];
