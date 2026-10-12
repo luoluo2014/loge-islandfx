@@ -1,0 +1,15 @@
+# 构建产物
+*.deb
+*.dylib
+*.o
+*.a
+obj/
+.theos/
+packages/
+
+# 本地工具链工作目录（不随仓库分发）
+/opt/
+
+# 系统垃圾
+.DS_Store
+*.swp

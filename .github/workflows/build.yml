@@ -1,0 +1,61 @@
+name: 构建落格Loge·灵动岛
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+# 标签推送时要创建 Release 并上传 deb，需要 contents: write
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 roothide Theos
+        run: |
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/roothide/theos/master/bin/install-theos)"
+
+      - name: 编译打包
+        run: |
+          export THEOS="$HOME/theos"
+          export PATH="$THEOS/bin:$PATH"
+          command -v ldid >/dev/null 2>&1 || brew install ldid || true
+          make clean
+          make package THEOS_PACKAGE_SCHEME=roothide FINALPACKAGE=1
+
+      - name: 产物清单
+        run: |
+          echo "=== 生成的 deb ==="
+          find . -name '*.deb' -type f -print
+          echo "=== 包信息 ==="
+          if command -v dpkg-deb >/dev/null 2>&1; then
+            find . -name '*.deb' -type f -exec sh -c 'dpkg-deb -I "$1" | grep -E "Package|Version|Architecture"' _ {} \;
+          else
+            # macOS runner 没有 dpkg-deb，退回 ar + tar 读 control
+            find . -name '*.deb' -type f | while read -r deb; do
+              tmp="$(mktemp -d)"
+              ( cd "$tmp" && ar x "$OLDPWD/$deb" control.tar.gz && tar xzf control.tar.gz )
+              grep -E "^(Package|Version|Architecture):" "$tmp/control"
+              rm -rf "$tmp"
+            done
+          fi
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: 落格Loge-灵动岛-deb
+          path: "**/*.deb"
+          if-no-files-found: error
+
+      - name: 发布到 GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "**/*.deb"
+          generate_release_notes: true

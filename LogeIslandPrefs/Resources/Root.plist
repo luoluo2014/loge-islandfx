@@ -1,0 +1,291 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>items</key>
+	<array>
+		<!-- 头部：卡通岛图标 + 大标题 + 引擎状态（LOGXHeaderCell 自刷新） -->
+		<dict>
+			<key>cell</key>					<string>PSGroupCell</string>
+			<key>id</key>					<string>headerGroup</string>
+			<key>headerCellClass</key>		<string>LOGXHeaderCell</string>
+		</dict>
+
+		<!-- 总开关 -->
+		<dict>
+			<key>cell</key>					<string>PSGroupCell</string>
+		</dict>
+		<dict>
+			<key>cell</key>					<string>PSSwitchCell</string>
+			<key>cellClass</key>			<string>LOGXToggleCell</string>
+			<key>label</key>				<string>启用背景视频</string>
+			<key>key</key>					<string>Enabled</string>
+			<key>defaults</key>				<string>com.loge.islandfx</string>
+			<key>default</key>				<false/>
+		</dict>
+
+		<!-- 紧凑状态 -->
+		<dict>
+			<key>cell</key>					<string>PSGroupCell</string>
+			<key>label</key>				<string>紧凑状态</string>
+			<key>footerText</key>			<string>未展开（日常待机）时的灵动岛背景。</string>
+		</dict>
+		<dict>
+			<key>cell</key>					<string>PSSwitchCell</string>
+			<key>cellClass</key>			<string>LOGXToggleCell</string>
+			<key>label</key>				<string>启用</string>
+			<key>key</key>					<string>Compact.Enabled</string>
+			<key>defaults</key>				<string>com.loge.islandfx</string>
+			<key>default</key>				<false/>
+		</dict>
+		<dict>
+			<key>cell</key>					<string>PSLinkCell</string>
+			<key>cellClass</key>			<string>LOGXVideoCell</string>
+			<key>id</key>					<string>compactVideo</string>
+			<key>label</key>				<string>背景视频</string>
+			<key>key</key>					<string>Compact.Path</string>
+			<key>defaults</key>				<string>com.loge.islandfx</string>
+			<key>default</key>				<string></string>
+		</dict>
+		<dict>
+			<key>cell</key>					<string>PSSegmentCell</string>
+			<key>cellClass</key>			<string>LOGXSegmentCell</string>
+			<key>label</key>				<string>填充模式</string>
+			<key>key</key>					<string>Compact.FillMode</string>
+			<key>defaults</key>				<string>com.loge.islandfx</string>
+			<key>validTitles</key>
+			<array>
+				<string>适应</string>
+				<string>填充</string>
+				<string>拉伸</string>
+			</array>
+			<key>validValues</key>
+			<array>
+				<string>0</string>
+				<string>1</string>
+				<string>2</string>
+			</array>
+			<key>default</key>				<string>1</string>
+		</dict>
+		<dict>
+			<key>cell</key>					<string>PSSliderCell</string>
+			<key>cellClass</key>			<string>LOGXSliderCell</string>
+			<key>label</key>				<string>透明度</string>
+			<key>key</key>					<string>Compact.Alpha</string>
+			<key>defaults</key>				<string>com.loge.islandfx</string>
+			<key>min</key>					<real>0.2</real>
+			<key>max</key>					<real>1.0</real>
+			<key>format</key>				<string>percent</string>
+			<key>default</key>				<real>1.0</real>
+		</dict>
+		<dict>
+			<key>cell</key>					<string>PSSliderCell</string>
+			<key>cellClass</key>			<string>LOGXSliderCell</string>
+			<key>label</key>				<string>缩放</string>
+			<key>key</key>					<string>Compact.Scale</string>
+			<key>defaults</key>				<string>com.loge.islandfx</string>
+			<key>min</key>					<real>0.5</real>
+			<key>max</key>					<real>1.5</real>
+			<key>format</key>				<string>percent</string>
+			<key>default</key>				<real>1.0</real>
+		</dict>
+		<dict>
+			<key>cell</key>					<string>PSSliderCell</string>
+			<key>cellClass</key>			<string>LOGXSliderCell</string>
+			<key>label</key>				<string>水平偏移</string>
+			<key>key</key>					<string>Compact.OffsetX</string>
+			<key>defaults</key>				<string>com.loge.islandfx</string>
+			<key>min</key>					<real>-40</real>
+			<key>max</key>					<real>40</real>
+			<key>format</key>				<string>integer</string>
+			<key>default</key>				<real>0</real>
+		</dict>
+		<dict>
+			<key>cell</key>					<string>PSSliderCell</string>
+			<key>cellClass</key>			<string>LOGXSliderCell</string>
+			<key>label</key>				<string>垂直偏移</string>
+			<key>key</key>					<string>Compact.OffsetY</string>
+			<key>defaults</key>				<string>com.loge.islandfx</string>
+			<key>min</key>					<real>-40</real>
+			<key>max</key>					<real>40</real>
+			<key>format</key>				<string>integer</string>
+			<key>default</key>				<real>0</real>
+		</dict>
+		<dict>
+			<key>cell</key>					<string>PSSegmentCell</string>
+			<key>cellClass</key>			<string>LOGXSegmentCell</string>
+			<key>label</key>				<string>圆角模式</string>
+			<key>key</key>					<string>Compact.CornerMode</string>
+			<key>defaults</key>				<string>com.loge.islandfx</string>
+			<key>validTitles</key>
+			<array>
+				<string>直角</string>
+				<string>跟随</string>
+				<string>自定义</string>
+			</array>
+			<key>validValues</key>
+			<array>
+				<string>0</string>
+				<string>1</string>
+				<string>2</string>
+			</array>
+			<key>default</key>				<string>1</string>
+		</dict>
+		<dict>
+			<key>cell</key>					<string>PSSliderCell</string>
+			<key>cellClass</key>			<string>LOGXSliderCell</string>
+			<key>label</key>				<string>圆角半径</string>
+			<key>key</key>					<string>Compact.CornerRadius</string>
+			<key>defaults</key>				<string>com.loge.islandfx</string>
+			<key>min</key>					<real>0</real>
+			<key>max</key>					<real>60</real>
+			<key>format</key>				<string>integer</string>
+			<key>default</key>				<real>24</real>
+		</dict>
+
+		<!-- 展开状态 -->
+		<dict>
+			<key>cell</key>					<string>PSGroupCell</string>
+			<key>label</key>				<string>展开状态</string>
+			<key>footerText</key>			<string>长按灵动岛展开后的背景。</string>
+		</dict>
+		<dict>
+			<key>cell</key>					<string>PSSwitchCell</string>
+			<key>cellClass</key>			<string>LOGXToggleCell</string>
+			<key>label</key>				<string>启用</string>
+			<key>key</key>					<string>Expanded.Enabled</string>
+			<key>defaults</key>				<string>com.loge.islandfx</string>
+			<key>default</key>				<false/>
+		</dict>
+		<dict>
+			<key>cell</key>					<string>PSLinkCell</string>
+			<key>cellClass</key>			<string>LOGXVideoCell</string>
+			<key>id</key>					<string>expandedVideo</string>
+			<key>label</key>				<string>背景视频</string>
+			<key>key</key>					<string>Expanded.Path</string>
+			<key>defaults</key>				<string>com.loge.islandfx</string>
+			<key>default</key>				<string></string>
+		</dict>
+		<dict>
+			<key>cell</key>					<string>PSSegmentCell</string>
+			<key>cellClass</key>			<string>LOGXSegmentCell</string>
+			<key>label</key>				<string>填充模式</string>
+			<key>key</key>					<string>Expanded.FillMode</string>
+			<key>defaults</key>				<string>com.loge.islandfx</string>
+			<key>validTitles</key>
+			<array>
+				<string>适应</string>
+				<string>填充</string>
+				<string>拉伸</string>
+			</array>
+			<key>validValues</key>
+			<array>
+				<string>0</string>
+				<string>1</string>
+				<string>2</string>
+			</array>
+			<key>default</key>				<string>1</string>
+		</dict>
+		<dict>
+			<key>cell</key>					<string>PSSliderCell</string>
+			<key>cellClass</key>			<string>LOGXSliderCell</string>
+			<key>label</key>				<string>透明度</string>
+			<key>key</key>					<string>Expanded.Alpha</string>
+			<key>defaults</key>				<string>com.loge.islandfx</string>
+			<key>min</key>					<real>0.2</real>
+			<key>max</key>					<real>1.0</real>
+			<key>format</key>				<string>percent</string>
+			<key>default</key>				<real>1.0</real>
+		</dict>
+		<dict>
+			<key>cell</key>					<string>PSSliderCell</string>
+			<key>cellClass</key>			<string>LOGXSliderCell</string>
+			<key>label</key>				<string>缩放</string>
+			<key>key</key>					<string>Expanded.Scale</string>
+			<key>defaults</key>				<string>com.loge.islandfx</string>
+			<key>min</key>					<real>0.5</real>
+			<key>max</key>					<real>1.5</real>
+			<key>format</key>				<string>percent</string>
+			<key>default</key>				<real>1.0</real>
+		</dict>
+		<dict>
+			<key>cell</key>					<string>PSSliderCell</string>
+			<key>cellClass</key>			<string>LOGXSliderCell</string>
+			<key>label</key>				<string>水平偏移</string>
+			<key>key</key>					<string>Expanded.OffsetX</string>
+			<key>defaults</key>				<string>com.loge.islandfx</string>
+			<key>min</key>					<real>-40</real>
+			<key>max</key>					<real>40</real>
+			<key>format</key>				<string>integer</string>
+			<key>default</key>				<real>0</real>
+		</dict>
+		<dict>
+			<key>cell</key>					<string>PSSliderCell</string>
+			<key>cellClass</key>			<string>LOGXSliderCell</string>
+			<key>label</key>				<string>垂直偏移</string>
+			<key>key</key>					<string>Expanded.OffsetY</string>
+			<key>defaults</key>				<string>com.loge.islandfx</string>
+			<key>min</key>					<real>-40</real>
+			<key>max</key>					<real>40</real>
+			<key>format</key>				<string>integer</string>
+			<key>default</key>				<real>0</real>
+		</dict>
+		<dict>
+			<key>cell</key>					<string>PSSegmentCell</string>
+			<key>cellClass</key>			<string>LOGXSegmentCell</string>
+			<key>label</key>				<string>圆角模式</string>
+			<key>key</key>					<string>Expanded.CornerMode</string>
+			<key>defaults</key>				<string>com.loge.islandfx</string>
+			<key>validTitles</key>
+			<array>
+				<string>直角</string>
+				<string>跟随</string>
+				<string>自定义</string>
+			</array>
+			<key>validValues</key>
+			<array>
+				<string>0</string>
+				<string>1</string>
+				<string>2</string>
+			</array>
+			<key>default</key>				<string>1</string>
+		</dict>
+		<dict>
+			<key>cell</key>					<string>PSSliderCell</string>
+			<key>cellClass</key>			<string>LOGXSliderCell</string>
+			<key>label</key>				<string>圆角半径</string>
+			<key>key</key>					<string>Expanded.CornerRadius</string>
+			<key>defaults</key>				<string>com.loge.islandfx</string>
+			<key>min</key>					<real>0</real>
+			<key>max</key>					<real>60</real>
+			<key>format</key>				<string>integer</string>
+			<key>default</key>				<real>24</real>
+		</dict>
+
+		<!-- 工具 -->
+		<dict>
+			<key>cell</key>					<string>PSGroupCell</string>
+			<key>label</key>				<string>工具</string>
+		</dict>
+		<dict>
+			<key>cell</key>					<string>PSButtonCell</string>
+			<key>action</key>				<string>respringTapped:</string>
+			<key>label</key>				<string>注销重启</string>
+			<key>isDestructive</key>		<true/>
+		</dict>
+		<dict>
+			<key>cell</key>					<string>PSLinkCell</string>
+			<key>isController</key>			<true/>
+			<key>detail</key>				<string>LOGXLogController</string>
+			<key>label</key>				<string>诊断日志</string>
+		</dict>
+
+		<dict>
+			<key>cell</key>					<string>PSGroupCell</string>
+			<key>footerAlignment</key>		<string>1</string>
+			<key>footerText</key>			<string>落格出品 · 每一个插件都有他的灵魂</string>
+		</dict>
+	</array>
+	<key>title</key>							<string>灵动岛</string>
+</dict>
+</plist>

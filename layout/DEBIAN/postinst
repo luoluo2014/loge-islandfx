@@ -1,0 +1,11 @@
+#!/bin/sh
+uicache -a >/dev/null 2>&1 || true
+killall Preferences >/dev/null 2>&1 || true
+# 延迟 respring。三个要点：
+# 1) 后台子 shell 必须 </dev/null >/dev/null 2>&1 全量重定向——否则它会一直
+#    持有 dpkg 的输出管道，Sileo/Zebra 前端要等所有管道写端关闭，
+#    安装进度就永远卡住（dpkg 维护脚本的经典陷阱，1.4.1 及以前在此翻车）；
+# 2) 延后到 4 秒，让 dpkg 和前端自己的收尾工作先跑完，再重载 SpringBoard；
+# 3) sbreload 不可用或卡住时兜底强杀 SpringBoard，保证 respring 一定发生。
+( sleep 4; sbreload >/dev/null 2>&1 || killall -9 SpringBoard ) </dev/null >/dev/null 2>&1 &
+exit 0
