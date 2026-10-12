@@ -2,12 +2,14 @@
 //  MIAFXVideoBackground.xm
 //  MIAFX
 //
-//  视频背景的「正确」触发方式：直接 hook SpringBoard 的灵动岛渲染表面
-//  _SPIslandRenderSurface，复用系统原生的 _playerLayer（AVPlayerLayer）来播放
-//  用户选择的背景视频（参考 DynamicFX 的实现路径）。
+//  视频背景：hook SpringBoard 的灵动岛渲染表面 _SPIslandRenderSurface，
+//  复用系统原生 _playerLayer（AVPlayerLayer）播放用户选择的背景视频。
 //
-//  之前用 MRU/SAUI 宿主视图挂载的方式在 iOS 17.1 上不生效，这里改为命中
-//  岛体渲染层本身。
+//  触发策略（对齐 DynamicFX）：
+//   - _sp_set_render_visible: 岛显示/隐藏时打标记；
+//   - setLastPresentationRadius: 尺寸变化（紧凑/展开切换）时打标记；
+//   - _sp_display_tick: 每帧节流检查，只在有标记且 _playerLayer 已就绪时装载一次。
+//   这样既能在正确时机挂载，又不会每帧重复创建 player 造成卡顿与耗电。
 //
 
 #import <Foundation/Foundation.h>
@@ -19,19 +21,18 @@
 #import "MIAFXConstants.h"
 #import "MIAFXPath.h"
 
-/// 灵动岛渲染表面（SpringBoard 私有类）
 @interface _SPIslandRenderSurface : UIView
 @end
 
 static const void *kMIAFXVideoBackgroundKey = &kMIAFXVideoBackgroundKey;
 
-/// 每个 _SPIslandRenderSurface 实例关联一个视频背景管理器
 @interface MIAFXVideoBackground : NSObject
 @property (nonatomic, weak) UIView *surface;
 @property (nonatomic, strong) AVQueuePlayer *player;
 @property (nonatomic, strong) AVPlayerLooper *looper;
 @property (nonatomic, copy, nullable) NSString *loadedPath;
-@property (nonatomic) BOOL expanded;
+@property (nonatomic) BOOL needsSync;
+- (void)markNeedsSync;
 - (void)sync;
 - (void)stop;
 @end
@@ -48,23 +49,33 @@ static const void *kMIAFXVideoBackgroundKey = &kMIAFXVideoBackgroundKey;
     return background;
 }
 
-/// 读取系统类原生的 _playerLayer（AVPlayerLayer）
+/// 沿继承链查找 ivar（系统类的 _playerLayer 可能声明在父类）
+static Ivar MIAFXFindIvar(Class cls, const char *name) {
+    while (cls != NULL) {
+        Ivar ivar = class_getInstanceVariable(cls, name);
+        if (ivar != NULL) return ivar;
+        cls = class_getSuperclass(cls);
+    }
+    return NULL;
+}
+
 static AVPlayerLayer *MIAFXPlayerLayerOfSurface(UIView *surface) {
-    Ivar ivar = class_getInstanceVariable([surface class], "_playerLayer");
-    if (ivar == NULL) return nil;
-    id layer = object_getIvar(surface, ivar);
+    Ivar ivar = MIAFXFindIvar([surface class], "_playerLayer");
+    if (ivar != NULL) {
+        id layer = object_getIvar(surface, ivar);
+        if ([layer isKindOfClass:[AVPlayerLayer class]]) return (AVPlayerLayer *)layer;
+    }
+    // KVC 兜底（KVC 会沿继承链查找）
+    id layer = [surface valueForKey:@"_playerLayer"];
     return [layer isKindOfClass:[AVPlayerLayer class]] ? (AVPlayerLayer *)layer : nil;
 }
 
-/// 根据当前岛的尺寸决定用紧凑还是展开配置
 - (NSString *)targetPath {
     MIAFXConfig *config = [MIAFXConfig sharedConfig];
     if (![config boolForKey:@"Global.Enabled"]) return nil;
     if (![config isFeatureEnabled:MIAFXFeatureVideo]) return nil;
 
-    // 紧凑岛宽度约 126pt，展开岛约 340pt，取中间值 220 区分
     BOOL expanded = self.surface.bounds.size.width >= 220.0;
-    self.expanded = expanded;
     NSString *prefix = expanded ? @"Expanded.Video" : @"Compact.Video";
     if (![config boolForKey:[prefix stringByAppendingString:@".Enabled"]]) return nil;
 
@@ -75,18 +86,29 @@ static AVPlayerLayer *MIAFXPlayerLayerOfSurface(UIView *surface) {
     return resolved;
 }
 
+- (void)markNeedsSync {
+    self.needsSync = YES;
+}
+
 - (void)sync {
+    self.needsSync = NO;
+
     NSString *path = [self targetPath];
     if (path == nil) {
         [self stop];
         return;
     }
-    AVPlayerLayer *layer = MIAFXPlayerLayerOfSurface(self.surface);
-    if (layer == nil) return;   // 系统尚未创建 _playerLayer，等下次刷新
 
-    // 已加载同一视频：只保证在播放，避免频繁重建
+    // 已加载同一视频且仍在播放：直接返回，零开销
     if ([path isEqualToString:self.loadedPath] && self.player != nil) {
         if (self.player.rate == 0.0) [self.player play];
+        return;
+    }
+
+    AVPlayerLayer *layer = MIAFXPlayerLayerOfSurface(self.surface);
+    if (layer == nil) {
+        // _playerLayer 还没就绪，下一帧再试
+        self.needsSync = YES;
         return;
     }
 
@@ -94,7 +116,7 @@ static AVPlayerLayer *MIAFXPlayerLayerOfSurface(UIView *surface) {
 
     AVPlayerItem *item = [AVPlayerItem playerItemWithURL:[NSURL fileURLWithPath:path]];
     self.player = [AVQueuePlayer queuePlayerWithItems:@[item]];
-    self.player.muted = YES;   // 背景视频静音
+    self.player.muted = YES;
     self.looper = [AVPlayerLooper playerLooperWithPlayer:self.player templateItem:item];
     layer.player = self.player;
     layer.videoGravity = AVLayerVideoGravityResizeAspectFill;
@@ -113,6 +135,7 @@ static AVPlayerLayer *MIAFXPlayerLayerOfSurface(UIView *surface) {
     }
     self.looper = nil;
     self.loadedPath = nil;
+    self.needsSync = NO;
 }
 
 - (void)dealloc {
@@ -127,16 +150,24 @@ static AVPlayerLayer *MIAFXPlayerLayerOfSurface(UIView *surface) {
     %orig;
     MIAFXVideoBackground *background = [MIAFXVideoBackground backgroundForSurface:self];
     if (visible) {
-        [background sync];
+        [background markNeedsSync];
     } else {
         [background stop];
+    }
+}
+
+- (void)_sp_display_tick:(id)tick {
+    %orig;
+    MIAFXVideoBackground *background = [MIAFXVideoBackground backgroundForSurface:self];
+    if (background.needsSync) {
+        [background sync];
     }
 }
 
 - (void)setLastPresentationRadius:(double)radius {
     %orig;
     (void)radius;
-    [[MIAFXVideoBackground backgroundForSurface:self] sync];
+    [[MIAFXVideoBackground backgroundForSurface:self] markNeedsSync];
 }
 
 %end
