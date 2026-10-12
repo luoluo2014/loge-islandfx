@@ -111,92 +111,75 @@ link_macho() {
 }
 
 # ------------------------------------------------------------------ 编译
-for arch in $ARCHS; do
-    log "编译 $arch"
-    objs="$WORK/objs-$arch"
-    mkdir -p "$objs"
+# 两个产物用不同架构，各取所需：
+#  - tweak dylib 必须 arm64e（注入 arm64e 的 SpringBoard 系统进程做 hook）
+#  - 设置 bundle 用 arm64：Linux clang 不支持 ptrauth，编 arm64e 时类指针无 PAC
+#    签名，而带 PTRAUTH_ABI 位会让 iOS 14+ 运行时做 autda 认证 → 进设置页闪退。
+#    纯 arm64 无 ABI 位，运行时按旧式无 PAC 处理类指针，且 arm64 bundle 可被
+#    arm64e 的 Preferences 进程正常 dlopen（iOS 对老 App/老插件的标准兼容路径）。
+DYLIB_ARCH="${DYLIB_ARCH:-arm64e}"
+BUNDLE_ARCH="${BUNDLE_ARCH:-arm64}"
 
-    # SpringBoard tweak（灵动岛渲染 + 视频引擎 + boot guard）
-    i=0
-    for f in "$WORK/logos/LogeIslandFX.mm" \
-             "$SRC"/LogeIslandFX/LOGXVideoBackground.m \
-             "$SRC"/Shared/LOGXConfig.m "$SRC"/Shared/LOGXPath.m "$SRC"/Shared/LOGXLog.m; do
-        i=$((i+1))
-        case "$f" in *.mm) mode=objcpp;; *) mode=objc;; esac
-        compile_one "$f" "$objs/sb-$i-$(basename "$f" | tr '.' '_').o" "$mode" "$arch" || die "编译失败：$f"
-    done
-
-    # 系统设置入口 bundle（清爽调参 UI，无独立 App）
-    k=0
-    for f in "$SRC"/LogeIslandPrefs/LOGXRootListController.m \
-             "$SRC"/LogeIslandPrefs/LOGXVideoPickerController.m \
-             "$SRC"/LogeIslandPrefs/LOGXLogController.m \
-             "$SRC"/LogeIslandPrefs/CustomCells/LOGXToggleCell.m \
-             "$SRC"/LogeIslandPrefs/CustomCells/LOGXSegmentCell.m \
-             "$SRC"/LogeIslandPrefs/CustomCells/LOGXSliderCell.m \
-             "$SRC"/LogeIslandPrefs/CustomCells/LOGXVideoCell.m \
-             "$SRC"/LogeIslandPrefs/CustomCells/LOGXHeaderCell.m \
-             "$SRC"/Shared/LOGXConfig.m "$SRC"/Shared/LOGXPath.m "$SRC"/Shared/LOGXLog.m; do
-        k=$((k+1))
-        case "$f" in *.mm) mode=objcpp;; *) mode=objc;; esac
-        compile_one "$f" "$objs/entry-$k-$(basename "$f" | tr '.' '_').o" "$mode" "$arch" || die "编译失败：$f"
-    done
-
-    # 补上 arm64e 的 PTRAUTH_ABI 版本位（Linux clang 不写，Apple ld64 会因此
-    # 拒绝把 ABI 版本写进产物，iOS 14+ 会判定为旧版 arm64e 而拒绝加载）
-    if [ "$arch" = "arm64e" ]; then
-        python3 /opt/build/fix-arm64e-abi.py "$objs"/*.o | tail -1
-    fi
-
-    # ---------------- 链接
-    log "链接 $arch"
-    link_macho "$WORK/LogeIslandFX-$arch.dylib" dylib "$arch" \
-        "$objs"/sb-*.o \
-        -lSystem -lobjc -lc++ \
-        -framework Foundation -framework UIKit -framework QuartzCore \
-        -framework AVFoundation -framework CoreMedia -framework CoreGraphics \
-        -L"$RH" -lsubstrate -lroothide || die "链接 LogeIslandFX.dylib 失败"
-
-    link_macho "$WORK/LogeIslandPrefs-$arch" bundle "$arch" \
-        "$objs"/entry-*.o \
-        -lSystem -lobjc -lc++ \
-        -framework Foundation -framework UIKit -framework QuartzCore \
-        -framework CoreGraphics -framework UniformTypeIdentifiers -framework PhotosUI \
-        -framework Preferences -L"$RH" -lroothide || die "链接 LogeIslandPrefs 失败"
+# ---- SpringBoard tweak（arm64e）
+log "编译 tweak ($DYLIB_ARCH)"
+objs="$WORK/objs-$DYLIB_ARCH"
+mkdir -p "$objs"
+i=0
+for f in "$WORK/logos/LogeIslandFX.mm" \
+         "$SRC"/LogeIslandFX/LOGXVideoBackground.m \
+         "$SRC"/Shared/LOGXConfig.m "$SRC"/Shared/LOGXPath.m "$SRC"/Shared/LOGXLog.m; do
+    i=$((i+1))
+    case "$f" in *.mm) mode=objcpp;; *) mode=objc;; esac
+    compile_one "$f" "$objs/sb-$i-$(basename "$f" | tr '.' '_').o" "$mode" "$DYLIB_ARCH" || die "编译失败：$f"
 done
 
-# ------------------------------------------------------------ arm64e PAC 后处理
-# Linux clang 18 不生成 ptrauth，bundle 的类指针（isa/superclass/bits/classlist/
-# classrefs）是无签名裸地址；而产物带 PTRAUTH_ABI 位，iOS 14+ 运行时会对它们做
-# PAC 认证（readClass→getSuperclass 的 autda），无签名即崩溃。这里给 chained
-# fixup 上的类指针补上 0x6AE1/asda/addrDiv 签名（dylib 无 chained fixups，不处理）。
-for arch in $ARCHS; do
-    [ "$arch" = "arm64e" ] || continue
-    log "arm64e 类元数据 PAC 后处理"
-    python3 "$SRC/tools/fix-arm64e-ptrauth.py" "$WORK/LogeIslandPrefs-arm64e" \
-        || die "PAC 后处理失败"
+# 补上 arm64e 的 PTRAUTH_ABI 版本位（Linux clang 不写，Apple ld64 会因此
+# 拒绝把 ABI 版本写进产物，iOS 14+ 会判定为旧版 arm64e 而拒绝加载）
+if [ "$DYLIB_ARCH" = "arm64e" ]; then
+    python3 /opt/build/fix-arm64e-abi.py "$objs"/*.o | tail -1
+fi
+
+# ---- 系统设置入口 bundle（arm64，无 ptrauth）
+log "编译 bundle ($BUNDLE_ARCH)"
+bobjs="$WORK/objs-$BUNDLE_ARCH"
+mkdir -p "$bobjs"
+k=0
+for f in "$SRC"/LogeIslandPrefs/LOGXRootListController.m \
+         "$SRC"/LogeIslandPrefs/LOGXVideoPickerController.m \
+         "$SRC"/LogeIslandPrefs/LOGXLogController.m \
+         "$SRC"/LogeIslandPrefs/CustomCells/LOGXToggleCell.m \
+         "$SRC"/LogeIslandPrefs/CustomCells/LOGXSegmentCell.m \
+         "$SRC"/LogeIslandPrefs/CustomCells/LOGXSliderCell.m \
+         "$SRC"/LogeIslandPrefs/CustomCells/LOGXVideoCell.m \
+         "$SRC"/LogeIslandPrefs/CustomCells/LOGXHeaderCell.m \
+         "$SRC"/Shared/LOGXConfig.m "$SRC"/Shared/LOGXPath.m "$SRC"/Shared/LOGXLog.m; do
+    k=$((k+1))
+    case "$f" in *.mm) mode=objcpp;; *) mode=objc;; esac
+    compile_one "$f" "$bobjs/entry-$k-$(basename "$f" | tr '.' '_').o" "$mode" "$BUNDLE_ARCH" || die "编译失败：$f"
 done
 
-# ------------------------------------------------------------------ 合并架构
-first_arch="$(echo "$ARCHS" | awk '{print $1}')"
+# ---------------- 链接
+log "链接 tweak ($DYLIB_ARCH)"
+link_macho "$WORK/LogeIslandFX.dylib" dylib "$DYLIB_ARCH" \
+    "$objs"/sb-*.o \
+    -lSystem -lobjc -lc++ \
+    -framework Foundation -framework UIKit -framework QuartzCore \
+    -framework AVFoundation -framework CoreMedia -framework CoreGraphics \
+    -L"$RH" -lsubstrate -lroothide || die "链接 LogeIslandFX.dylib 失败"
+
+log "链接 bundle ($BUNDLE_ARCH)"
+link_macho "$WORK/LogeIslandPrefs" bundle "$BUNDLE_ARCH" \
+    "$bobjs"/entry-*.o \
+    -lSystem -lobjc -lc++ \
+    -framework Foundation -framework UIKit -framework QuartzCore \
+    -framework CoreGraphics -framework UniformTypeIdentifiers -framework PhotosUI \
+    -framework Preferences -L"$RH" -lroothide || die "链接 LogeIslandPrefs 失败"
+
+# ------------------------------------------------------------------ 输出产物
 log "输出产物"
-for name in LogeIslandFX.dylib LogeIslandPrefs; do
-    case "$name" in
-        *.*) base="${name%.*}"; ext=".${name##*.}" ;;
-        *)   base="$name";      ext="" ;;
-    esac
-    if [ "$(echo "$ARCHS" | wc -w)" -gt 1 ]; then
-        inputs=()
-        for a in $ARCHS; do inputs+=("$WORK/$base-$a$ext"); done
-        # fat 合并必须用 cctools 的 lipo；ld64 只接受单架构
-        LIPO=/opt/build/toolchain/bin/aarch64-apple-darwin-lipo
-        command -v "$LIPO" >/dev/null || LIPO=lipo
-        "$LIPO" -create -output "$STAGE/$name" "${inputs[@]}" || die "lipo 合并 $name 失败"
-    else
-        cp "$WORK/$base-$first_arch$ext" "$STAGE/$name"
-    fi
-    printf '  %s\n' "$name"
-done
+cp "$WORK/LogeIslandFX.dylib" "$STAGE/LogeIslandFX.dylib"
+cp "$WORK/LogeIslandPrefs"    "$STAGE/LogeIslandPrefs"
+printf '  %s\n' LogeIslandFX.dylib LogeIslandPrefs
 
 # ------------------------------------------------------------------ 签名
 log "ldid 签名"

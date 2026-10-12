@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 落格Loge·灵动岛 2.0 —— deb 交付前三重校验：
-#   1) 架构：dylib/bundle 必须都是 arm64e（PAC）
+#   1) 架构：dylib=arm64e（注入系统进程），bundle=arm64（绕开 ptrauth）
 #   2) 中文：ObjC 字面量由本工具链以 UTF-16LE 存入 __ustring（CFString flags
 #      标注 Unicode，运行时 CoreFoundation 正确解码，与 1.4.x 同款机制），
 #      因此不能用 UTF-8 grep 校验，必须解码 __ustring 后比对关键文案
@@ -35,69 +35,33 @@ for f in "$DYLIB" "$BUNDLE" \
     [ -e "$f" ] || die "缺少文件：$f"
 done
 
-log "1) 架构校验"
-arch_info() {
-    if command -v lipo >/dev/null 2>&1; then
-        lipo -info "$1" 2>/dev/null || file -b "$1"
-    else
-        file -b "$1"
-    fi
-}
-for f in "$DYLIB" "$BUNDLE"; do
-    info="$(arch_info "$f")"
-    echo "  $(basename "$f"): $info"
-    echo "$info" | grep -q "arm64e" || die "$(basename "$f") 不是 arm64e"
-done
-
-log "1b) chained fixups 校验（arm64e 类元数据 PAC 指针依赖它）"
-python3 - "$BUNDLE" <<'PYEOF' || die "bundle 缺少 LC_DYLD_CHAINED_FIXUPS"
+log "1) 架构校验（dylib=arm64e 注入系统进程；bundle=arm64 绕开 ptrauth）"
+python3 - "$DYLIB" "$BUNDLE" <<'PYEOF' || die "架构校验失败"
 import struct, sys
-data = open(sys.argv[1], 'rb').read()
-ncmds = struct.unpack('<I', data[16:20])[0]
-off, has_cf = 32, False
-for _ in range(ncmds):
-    cmd, size = struct.unpack('<II', data[off:off+8])
-    if cmd == 0x80000034:  # LC_DYLD_CHAINED_FIXUPS
-        has_cf = True
-    off += size
-print("  [✓] LC_DYLD_CHAINED_FIXUPS" if has_cf else "  [✗] 缺少 LC_DYLD_CHAINED_FIXUPS")
-sys.exit(0 if has_cf else 1)
-PYEOF
 
-log "1c) 类指针 PAC 认证校验（auth/key/addrDiv/discriminator）"
-python3 - "$BUNDLE" <<'PYEOF' || die "类指针 PAC 签名缺失（会触发 readClass 闪退）"
-import struct, sys
-data = open(sys.argv[1], 'rb').read()
-ncmds = struct.unpack('<I', data[16:20])[0]
-off, secs = 32, {}
-for _ in range(ncmds):
-    cmd, size = struct.unpack('<II', data[off:off+8])
-    if cmd == 0x19:
-        nsects = struct.unpack('<I', data[off+64:off+68])[0]
-        for i in range(nsects):
-            s = data[off+72+i*80:off+72+(i+1)*80]
-            name = s[:16].rstrip(b'\0').decode()
-            a, sz = struct.unpack('<QQ', s[32:48])
-            fo = struct.unpack('<I', s[48:52])[0]
-            secs[name] = (a, sz, fo)
-    off += size
+def macho_arch(path):
+    d = open(path, 'rb').read()
+    magic, cputype, cpusubtype = struct.unpack('<III', d[:12])
+    return cputype, cpusubtype
+
 ok = True
-def chk(label, fo, want_div):
-    global ok
-    v = struct.unpack_from('<Q', data, fo)[0]
-    auth, key, addrdiv, div = (v>>63)&1, (v>>49)&3, (v>>48)&1, (v>>32)&0xffff
-    good = (auth == 1 and key == 2 and addrdiv == 1 and div == want_div)
-    ok &= good
-    print("  [✓] %s auth=1 key=ASDA addrDiv=1 div=0x%04X" % (label, want_div) if good
-          else "  [✗] %s auth=%d key=%d addrDiv=%d div=0x%x (want 0x%x)" % (label, auth, key, addrdiv, div, want_div))
-# classlist[0] -> isa 判别子 0x6AE1
-a, sz, fo = secs['__objc_classlist']
-chk('classlist[0]', fo, 0x6AE1)
-# 第一个类对象: isa(+0)=0x6AE1, superclass(+8)=0xB5AB, bits(+32)=0x61F8
-a, sz, fo = secs['__objc_data']
-chk('isa', fo, 0x6AE1)
-chk('superclass', fo+8, 0xB5AB)
-chk('bits(class_ro)', fo+32, 0x61F8)
+
+# tweak dylib 必须 arm64e（含 PTRAUTH_ABI 位），否则无法注入 arm64e 的 SpringBoard
+cp, cs = macho_arch(sys.argv[1])
+good = (cp == 0x0100000C and bool(cs & 0x80000000))
+ok &= good
+print("  [✓] LogeIslandFX.dylib 是 arm64e（PTRAUTH_ABI）" if good
+      else "  [✗] dylib cputype=0x%08x cpusubtype=0x%08x（应为 arm64e）" % (cp, cs))
+
+# 设置 bundle 必须纯 arm64（无 PTRAUTH_ABI 位）——这是设置页不闪退的关键：
+# Linux clang 不生成 ptrauth，arm64e bundle 的类指针无签名会被运行时 autda 认证
+# 打到崩溃；纯 arm64 无 ABI 位，运行时按旧式无 PAC 处理，绕开整条认证链。
+cp, cs = macho_arch(sys.argv[2])
+good = (cp == 0x0100000C and not (cs & 0x80000000))
+ok &= good
+print("  [✓] LogeIslandPrefs 是纯 arm64（无 PTRAUTH_ABI，运行时不做 PAC 认证）" if good
+      else "  [✗] bundle cputype=0x%08x cpusubtype=0x%08x（应为无 ABI 位的 arm64）" % (cp, cs))
+
 sys.exit(0 if ok else 1)
 PYEOF
 
