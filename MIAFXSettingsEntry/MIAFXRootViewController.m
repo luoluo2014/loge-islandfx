@@ -18,6 +18,7 @@
 #import <notify.h>
 #import <PhotosUI/PhotosUI.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#import <UIKit/UITraitCollection.h>
 #include <stdlib.h>
 #include <sys/sysctl.h>
 
@@ -85,6 +86,7 @@
 @property (nonatomic, strong) UIView *track;
 @property (nonatomic, strong) UIView *thumb;
 @property (nonatomic, strong) NSMutableArray<UIButton *> *buttons;
+@property (nonatomic, strong) id traitToken;   // iOS 17 trait 变化注册令牌（须强引用）
 @end
 
 @implementation MIAFXPillSegmentedControl
@@ -111,6 +113,18 @@
     [_track addSubview:_thumb];
 
     [self updateAppearance];
+
+    // 深浅色切换时更新 pill 配色：iOS 17 起 traitCollectionDidChange: 已废弃，
+    // 改用 UITraitChangeObservable 注册 API（部署目标 17.1，必然可用；@available 仅为编译期兼容）
+    if (@available(iOS 17.0, *)) {
+        __weak typeof(self) weakSelf = self;
+        _traitToken = [self registerForTraitChanges:@[UITraitUserInterfaceStyle.class]
+                                       withHandler:^(__kindof id<UITraitEnvironment> environment, UITraitCollection *previousTraitCollection) {
+            (void)environment;
+            (void)previousTraitCollection;
+            [weakSelf updateAppearance];
+        }];
+    }
     return self;
 }
 
@@ -126,10 +140,12 @@
     }
 }
 
-- (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
-    [super traitCollectionDidChange:previousTraitCollection];
-    if (self.traitCollection.userInterfaceStyle != previousTraitCollection.userInterfaceStyle) {
-        [self updateAppearance];
+- (void)dealloc {
+    if (_traitToken != nil) {
+        if (@available(iOS 17.0, *)) {
+            [self unregisterForTraitChanges:_traitToken];
+        }
+        _traitToken = nil;
     }
 }
 
@@ -140,7 +156,6 @@
     for (NSInteger index = 0; index < (NSInteger)self.titles.count; index++) {
         UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
         button.tag = index;
-        button.adjustsImageWhenHighlighted = NO;
         button.titleLabel.font = [UIFont systemFontOfSize:13.0 weight:UIFontWeightSemibold];
         [button setTitle:self.titles[(NSUInteger)index] forState:UIControlStateNormal];
         [button addTarget:self action:@selector(tapped:) forControlEvents:UIControlEventTouchUpInside];
