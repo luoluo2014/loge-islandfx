@@ -1608,7 +1608,7 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
     }
 
     [out appendString:@"----- video-diag.log（视频背景诊断，尾部）-----\n"];
-    [out appendString:[self tailOfFileAtPath:MIAFXVideoDiagPath() maxBytes:120 * 1024] ?: @"（暂无：插件可能未加载或从未触发灵动岛）"];
+    [out appendString:[self tailOfFileAtPath:MIAFXVideoDiagPath() maxBytes:120 * 1024] ?: @"（暂无：插件可能未加载，或视频背景从未启用）"];
     [out appendString:@"\n\n----- miafx.log（运行日志，尾部）-----\n"];
     [out appendString:[self tailOfFileAtPath:MIAFXLogPath() maxBytes:60 * 1024] ?: @"（无：全局「调试日志」开关未开启时不写此文件）"];
     [out appendString:@"\n\n----- diagnostics.plist（运行时探测）-----\n"];
@@ -1770,7 +1770,7 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
     for (NSString *path in paths) {
         [manager removeItemAtPath:path error:nil];
     }
-    [self showNotice:@"诊断日志已清空，重新触发一次灵动岛即可生成新记录"];
+    [self showNotice:@"诊断日志已清空，插件每 5 秒会自动写入新记录，稍候重新打开即可看到"];
 }
 
 - (void)presentDocumentPickerForImport {
@@ -1862,7 +1862,7 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
 ///       因此这里不扫本地目录，改读插件端通过 CFPreferences 发布的清单。
 - (void)presentVideoDirectoryPickerForSpec:(MIAFXSettingSpec *)spec {
     NSArray<NSDictionary *> *assets = [self publishedVideoAssets];
-    NSString *status = [self isPluginOnline] ? @"插件在线" : @"插件离线（导入后需触发一次灵动岛）";
+    NSString *status = [self isPluginOnline] ? @"插件在线" : @"插件离线（Respring 或播放音乐后重试）";
     UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"选择视频素材"
                                                                   message:[NSString stringWithFormat:@"灵动岛可用素材（%lu 个）· %@", (unsigned long)assets.count, status]
                                                            preferredStyle:UIAlertControllerStyleActionSheet];
@@ -2098,9 +2098,9 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
         [message appendString:@"插件在线，但暂时没有收到这个文件。\n\n"];
     }
     [message appendString:@"请依次尝试：\n"
-                        "1. 播放一首音乐或插一次充电，触发一次灵动岛；\n"
-                        "2. 回到本页等 5～10 秒（插件每 5 秒自动检查一次投递队列）；\n"
-                        "3. 仍不行就 Respring，或在 Filza 中把文件放到：\n"];
+                        "1. 留在本页等 5～10 秒（插件每 5 秒自动检查一次投递队列，无需触发灵动岛）；\n"
+                        "2. 若上面显示插件离线，先 Respring，等 SpringBoard 把插件加载起来；\n"
+                        "3. 仍不行就在 Filza 中把文件放到：\n"];
     [message appendString:[MIAFXFilzaLauncher sharedLauncher].videosDirectory];
     [message appendString:@"\n\n详细过程可在「诊断反馈 → 查看诊断日志」中看到（video-diag.log）。"];
     [self showErrorAlertOnMain:[NSString stringWithFormat:@"插件尚未收到「%@」。\n\n%@", name, message]];
