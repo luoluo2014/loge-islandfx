@@ -18,6 +18,7 @@
 #import <PhotosUI/PhotosUI.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #include <stdlib.h>
+#include <sys/sysctl.h>
 
 #pragma mark - 内部渲染结构
 
@@ -1095,6 +1096,12 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
         [self rescanAssets];
     } else if ([identifier isEqualToString:MIAFXActionOpenSystemSettings]) {
         [launcher openSystemSettingsFromViewController:self];
+    } else if ([identifier isEqualToString:MIAFXActionShareDiagnostics]) {
+        [self shareDiagnostics];
+    } else if ([identifier isEqualToString:MIAFXActionViewDiagnostics]) {
+        [self presentDiagnosticsViewer];
+    } else if ([identifier isEqualToString:MIAFXActionClearDiagnostics]) {
+        [self confirmClearDiagnostics];
     }
 }
 
@@ -1235,6 +1242,196 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
         popover.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds), 1.0, 1.0);
     }
     [self presentViewController:activity animated:YES completion:nil];
+}
+
+#pragma mark - 诊断反馈（查看 / 分享 / 清空）
+
+/// 读取文件尾部（超限时只保留最后 maxBytes 字节，避免诊断文件过大）
+- (NSString *)tailOfFileAtPath:(NSString *)path maxBytes:(NSUInteger)maxBytes {
+    if (path.length == 0) return nil;
+    NSFileHandle *handle = [NSFileHandle fileHandleForReadingAtPath:path];
+    if (handle == nil) return nil;
+    NSString *text = nil;
+    @try {
+        NSDictionary *attributes = [[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil];
+        unsigned long long size = [attributes[NSFileSize] unsignedLongLongValue];
+        if (size > maxBytes) [handle seekToFileOffset:size - maxBytes];
+        NSData *data = [handle readDataToEndOfFile];
+        text = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    } @catch (NSException *exception) {
+        (void)exception;
+        text = nil;
+    } @finally {
+        [handle closeFile];
+    }
+    return text;
+}
+
+/// 汇总一份诊断文本：环境信息 + 视频背景诊断日志 + 运行日志 + 配置 + 素材清单
+- (NSString *)diagnosticsSnapshotText {
+    NSMutableString *out = [NSMutableString string];
+    NSDateFormatter *stamp = [[NSDateFormatter alloc] init];
+    stamp.dateFormat = @"yyyy-MM-dd HH:mm:ss";
+
+    [out appendString:@"===== 落格Loge·灵动岛 · 诊断日志 =====\n"];
+    [out appendFormat:@"生成时间：%@\n", [stamp stringFromDate:[NSDate date]]];
+    NSBundle *bundle = [NSBundle bundleForClass:self.class];
+    [out appendFormat:@"插件版本：%@（构建 %@）\n",
+     bundle.infoDictionary[@"CFBundleShortVersionString"] ?: @"?",
+     bundle.infoDictionary[@"CFBundleVersion"] ?: @"?"];
+    [out appendFormat:@"系统版本：%@\n", UIDevice.currentDevice.systemVersion];
+    size_t machineSize = 0;
+    sysctlbyname("hw.machine", NULL, &machineSize, NULL, 0);
+    if (machineSize > 0) {
+        char *machine = (char *)malloc(machineSize);
+        if (machine != NULL) {
+            if (sysctlbyname("hw.machine", machine, &machineSize, NULL, 0) == 0) {
+                [out appendFormat:@"设备型号：%s\n", machine];
+            }
+            free(machine);
+        }
+    }
+    [out appendFormat:@"数据目录：%@\n\n", MIAFXDataDirectory()];
+
+    [out appendString:@"----- video-diag.log（视频背景诊断，尾部）-----\n"];
+    [out appendString:[self tailOfFileAtPath:MIAFXVideoDiagPath() maxBytes:120 * 1024] ?: @"（暂无：插件可能未加载或从未触发灵动岛）"];
+    [out appendString:@"\n\n----- miafx.log（运行日志，尾部）-----\n"];
+    [out appendString:[self tailOfFileAtPath:MIAFXLogPath() maxBytes:60 * 1024] ?: @"（无：全局「调试日志」开关未开启时不写此文件）"];
+    [out appendString:@"\n\n----- diagnostics.plist（运行时探测）-----\n"];
+    [out appendString:[[NSDictionary dictionaryWithContentsOfFile:MIAFXDiagnosticsPath()] description] ?: @"（无）"];
+    [out appendString:@"\n\n----- panic.plist（启动保护状态）-----\n"];
+    [out appendString:[[NSDictionary dictionaryWithContentsOfFile:MIAFXPanicPath()] description] ?: @"（无）"];
+    [out appendString:@"\n\n----- settings.plist（Global.* 与 *.Video.* 关键配置）-----\n"];
+    NSDictionary *settings = [NSDictionary dictionaryWithContentsOfFile:MIAFXSettingsPath()];
+    if ([settings isKindOfClass:NSDictionary.class]) {
+        for (NSString *key in [settings.allKeys sortedArrayUsingSelector:@selector(compare:)]) {
+            if ([key hasPrefix:@"Global."] || [key containsString:@".Video."]) {
+                [out appendFormat:@"%@ = %@\n", key, settings[key] ?: @"(null)"];
+            }
+        }
+    } else {
+        [out appendString:@"（无：插件可能从未写入配置）"];
+    }
+    [out appendString:@"\n----- Videos 素材目录清单 -----\n"];
+    NSString *videosDirectory = [[MIAFXFilzaLauncher sharedLauncher] videosDirectory];
+    NSArray<NSString *> *items = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:videosDirectory error:nil];
+    if (items.count == 0) {
+        [out appendString:@"（空）"];
+    } else {
+        for (NSString *name in [items sortedArrayUsingSelector:@selector(compare:)]) {
+            NSString *full = [videosDirectory stringByAppendingPathComponent:name];
+            NSDictionary *attributes = [[NSFileManager defaultManager] attributesOfItemAtPath:full error:nil];
+            [out appendFormat:@"%@ (%llu KB)\n", name, (unsigned long long)([attributes[NSFileSize] unsignedLongLongValue] / 1024)];
+        }
+    }
+    [out appendString:@"\n===== 结束 ====="];
+    return out;
+}
+
+/// 把诊断汇总写入 Logs/miafx-diagnostics-<时间戳>.log
+- (NSURL *)writeDiagnosticsSnapshot {
+    NSString *text = [self diagnosticsSnapshotText];
+    if (text.length == 0) return nil;
+    NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+    formatter.dateFormat = @"yyyyMMdd-HHmmss";
+    NSString *name = [NSString stringWithFormat:@"miafx-diagnostics-%@.log", [formatter stringFromDate:[NSDate date]]];
+    NSString *path = [[[MIAFXFilzaLauncher sharedLauncher] logsDirectory] stringByAppendingPathComponent:name];
+    NSError *error = nil;
+    if (![text writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:&error]) {
+        [self showErrorAlert:error.localizedDescription ?: @"写入诊断文件失败"];
+        return nil;
+    }
+    return [NSURL fileURLWithPath:path];
+}
+
+- (void)shareDiagnostics {
+    NSURL *url = [self writeDiagnosticsSnapshot];
+    if (url == nil) return;
+    UIActivityViewController *activity = [[UIActivityViewController alloc] initWithActivityItems:@[url] applicationActivities:nil];
+    UIPopoverPresentationController *popover = activity.popoverPresentationController;
+    if (popover) {
+        popover.sourceView = self.view;
+        popover.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds), 1.0, 1.0);
+    }
+    [self presentViewController:activity animated:YES completion:nil];
+}
+
+/// 从查看器里点分享：先收起查看器，再弹分享面板
+- (void)shareDiagnosticsFromViewer {
+    UIViewController *presented = self.presentedViewController;
+    [presented dismissViewControllerAnimated:YES completion:^{
+        [self shareDiagnostics];
+    }];
+}
+
+- (void)presentDiagnosticsViewer {
+    NSString *text = [self diagnosticsSnapshotText] ?: @"（暂无诊断日志）";
+    UIViewController *viewer = [[UIViewController alloc] init];
+    viewer.view.backgroundColor = UIColor.systemBackgroundColor;
+    viewer.title = @"诊断日志";
+
+    UITextView *textView = [[UITextView alloc] initWithFrame:viewer.view.bounds];
+    textView.translatesAutoresizingMaskIntoConstraints = NO;
+    textView.editable = NO;
+    textView.selectable = YES;
+    textView.font = [UIFont monospacedSystemFontOfSize:11 weight:UIFontWeightRegular];
+    textView.text = text;
+    textView.textColor = UIColor.labelColor;
+    [viewer.view addSubview:textView];
+    [NSLayoutConstraint activateConstraints:@[
+        [textView.leadingAnchor constraintEqualToAnchor:viewer.view.leadingAnchor],
+        [textView.trailingAnchor constraintEqualToAnchor:viewer.view.trailingAnchor],
+        [textView.topAnchor constraintEqualToAnchor:viewer.view.topAnchor],
+        [textView.bottomAnchor constraintEqualToAnchor:viewer.view.bottomAnchor],
+    ]];
+
+    UIBarButtonItem *shareItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAction
+                                                                              target:self
+                                                                              action:@selector(shareDiagnosticsFromViewer)];
+    UIBarButtonItem *doneItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone
+                                                                            target:self
+                                                                            action:@selector(dismissPresentedDiagnostics)];
+    viewer.navigationItem.rightBarButtonItem = shareItem;
+    viewer.navigationItem.leftBarButtonItem = doneItem;
+
+    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:viewer];
+    nav.modalPresentationStyle = UIModalPresentationPageSheet;
+    [self presentViewController:nav animated:YES completion:nil];
+}
+
+- (void)dismissPresentedDiagnostics {
+    [self.presentedViewController dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (void)confirmClearDiagnostics {
+    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"清空诊断日志"
+                                                                   message:@"将删除 Logs 目录下的 video-diag.log、miafx.log 以及已生成的诊断分享文件。插件会从空日志重新开始记录。"
+                                                            preferredStyle:UIAlertControllerStyleActionSheet];
+    __weak typeof(self) weakSelf = self;
+    [sheet addAction:[UIAlertAction actionWithTitle:@"清空" style:UIAlertActionStyleDestructive handler:^(UIAlertAction * _Nonnull action) {
+        [weakSelf clearDiagnosticsFiles];
+    }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    if (sheet.popoverPresentationController) {
+        sheet.popoverPresentationController.sourceView = self.view;
+        sheet.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds), 1.0, 1.0);
+    }
+    [self presentViewController:sheet animated:YES completion:nil];
+}
+
+- (void)clearDiagnosticsFiles {
+    NSFileManager *manager = [NSFileManager defaultManager];
+    NSMutableArray<NSString *> *paths = [NSMutableArray arrayWithObjects:MIAFXVideoDiagPath(), MIAFXLogPath(), nil];
+    NSString *logsDirectory = [[MIAFXFilzaLauncher sharedLauncher] logsDirectory];
+    for (NSString *name in [manager contentsOfDirectoryAtPath:logsDirectory error:nil] ?: @[]) {
+        if ([name hasPrefix:@"miafx-diagnostics-"]) {
+            [paths addObject:[logsDirectory stringByAppendingPathComponent:name]];
+        }
+    }
+    for (NSString *path in paths) {
+        [manager removeItemAtPath:path error:nil];
+    }
+    [self showNotice:@"诊断日志已清空，重新触发一次灵动岛即可生成新记录"];
 }
 
 - (void)presentDocumentPickerForImport {

@@ -119,6 +119,9 @@ FOUNDATION_EXPORT NSString *const MIAFXActionResetProtection;
 FOUNDATION_EXPORT NSString *const MIAFXActionRescanAssets;
 FOUNDATION_EXPORT NSString *const MIAFXActionDiagnostics;
 FOUNDATION_EXPORT NSString *const MIAFXActionOpenSystemSettings;
+FOUNDATION_EXPORT NSString *const MIAFXActionShareDiagnostics;
+FOUNDATION_EXPORT NSString *const MIAFXActionViewDiagnostics;
+FOUNDATION_EXPORT NSString *const MIAFXActionClearDiagnostics;
 
 /// 动作标识符构造辅助
 FOUNDATION_EXPORT NSString *MIAFXPresetThemeIdentifier(NSString *slug);

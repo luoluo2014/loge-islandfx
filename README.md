@@ -3,7 +3,7 @@
 > 落格出品 · 每一个插件都有他的灵魂
 
 > 目标环境：iOS 17.1 · Relaxin（RootHide 隐根）· arm64e
-> 包名：`com.loge.islandfx` · 版本：`1.3.0`
+> 包名：`com.loge.islandfx` · 版本：`1.3.1`
 
 「落格Loge·灵动岛」（工程代号 MIAFX）是一套按「防卡死 + 省电优先」设计的灵动岛改造插件：
 视频底色、10 种呼吸动效、双层流光跑马灯、19 种轨迹素材、液态粘连（Metaball）、
@@ -49,7 +49,7 @@ MIAFX/
 
 把本仓库推到 GitHub 即自动编译：
 - push 到 `main`/`master` → 构建产物上传到 Actions 的 Artifacts；
-- push `v*` 标签（如 `v1.3.0`）→ 自动创建 GitHub Release 并附上 deb。
+- push `v*` 标签（如 `v1.3.1`）→ 自动创建 GitHub Release 并附上 deb。
 
 ### 方式 B：macOS 本地编译
 
@@ -65,7 +65,7 @@ make package THEOS_PACKAGE_SCHEME=roothide
 ## 安装
 
 ```sh
-dpkg -i com.loge.islandfx_1.3.0_iphoneos-arm64e.deb
+dpkg -i com.loge.islandfx_1.3.1_iphoneos-arm64e.deb
 uicache -a; sbreload
 ```
 

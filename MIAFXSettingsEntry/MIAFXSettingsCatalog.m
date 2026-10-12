@@ -27,6 +27,9 @@ NSString *const MIAFXActionResetProtection = @"diagnostics.resetProtection";
 NSString *const MIAFXActionRescanAssets = @"assets.rescan";
 NSString *const MIAFXActionDiagnostics = @"diagnostics.open";
 NSString *const MIAFXActionOpenSystemSettings = @"system.openSettings";
+NSString *const MIAFXActionShareDiagnostics = @"diagnostics.share";
+NSString *const MIAFXActionViewDiagnostics = @"diagnostics.view";
+NSString *const MIAFXActionClearDiagnostics = @"diagnostics.clear";
 
 #pragma mark - 动作标识符前缀
 
@@ -467,6 +470,11 @@ static MIAFXSettingSection *MIASection(NSString *title, NSString * _Nullable foo
                 MIAActionSpec(MIAFXActionFilzaVideos, @"在 Filza 中打开视频目录", @"跳转到 Videos 文件夹查看/管理已导入的素材。"),
                 MIAActionSpec(MIAFXActionFilzaLogs, @"打开诊断日志目录", @"视频背景不生效时，进入 Logs 目录把 video-diag.log 发给作者定位问题。"),
             ]),
+            MIASection(@"诊断反馈", @"视频背景异常时，一键生成诊断文件直接发给作者。", @[
+                MIAActionSpec(MIAFXActionShareDiagnostics, @"分享诊断日志", @"汇总运行日志、配置与素材清单为一个文件，通过微信/QQ/邮件直接发给作者。"),
+                MIAActionSpec(MIAFXActionViewDiagnostics, @"查看诊断日志", @"在应用内直接查看最近的诊断记录，可截图反馈。"),
+                MIAActionSpec(MIAFXActionClearDiagnostics, @"清空诊断日志", @"删除已有日志，重新开始记录。"),
+            ]),
             MIASection(@"本组默认值", @"", @[
                 MIAActionSpec(MIAFXResetPageIdentifier(@"islandBackground"), @"恢复本组默认", @"把紧凑与展开视频相关参数恢复为出厂值。"),
             ]),
@@ -838,6 +846,7 @@ static MIAFXSettingSection *MIASection(NSString *title, NSString * _Nullable foo
             ]),
             MIASection(@"诊断", @"读取 diagnostics.plist 与 panic.plist，排查崩溃与启动保护。", @[
                 MIAActionSpec(MIAFXActionDiagnostics, @"打开诊断页", @"显示运行时状态、panic 计数与路径信息。"),
+                MIAActionSpec(MIAFXActionShareDiagnostics, @"分享诊断日志", @"汇总运行日志、配置与素材清单为一个文件，通过微信/QQ/邮件直接发给作者。"),
                 MIAActionSpec(MIAFXActionResetProtection, @"重置启动保护计数", @"清除 panic.plist 中的连续启动计数。"),
                 MIAActionSpec(MIAFXActionRescanAssets, @"重新扫描素材", @"通知后台重新扫描素材目录。"),
                 MIAActionSpec(MIAFXActionRespring, @"Respring", @"重载 SpringBoard 使部分改动生效。"),
