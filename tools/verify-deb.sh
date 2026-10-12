@@ -82,14 +82,22 @@ for _ in range(ncmds):
             secs[name] = (a, sz, fo)
     off += size
 ok = True
-# 第一个 classlist 条目必须是 auth=1 key=2(asda) addrDiv=1 div=0x6AE1
+def chk(label, fo, want_div):
+    global ok
+    v = struct.unpack_from('<Q', data, fo)[0]
+    auth, key, addrdiv, div = (v>>63)&1, (v>>49)&3, (v>>48)&1, (v>>32)&0xffff
+    good = (auth == 1 and key == 2 and addrdiv == 1 and div == want_div)
+    ok &= good
+    print("  [✓] %s auth=1 key=ASDA addrDiv=1 div=0x%04X" % (label, want_div) if good
+          else "  [✗] %s auth=%d key=%d addrDiv=%d div=0x%x (want 0x%x)" % (label, auth, key, addrdiv, div, want_div))
+# classlist[0] -> isa 判别子 0x6AE1
 a, sz, fo = secs['__objc_classlist']
-v = struct.unpack_from('<Q', data, fo)[0]
-auth, key, addrdiv, div = (v>>63)&1, (v>>49)&3, (v>>48)&1, (v>>32)&0xffff
-good = (auth == 1 and key == 2 and addrdiv == 1 and div == 0x6AE1)
-ok &= good
-print("  [✓] classlist[0] auth=1 key=ASDA addrDiv=1 div=0x6AE1" if good
-      else "  [✗] classlist[0] auth=%d key=%d addrDiv=%d div=0x%x" % (auth, key, addrdiv, div))
+chk('classlist[0]', fo, 0x6AE1)
+# 第一个类对象: isa(+0)=0x6AE1, superclass(+8)=0xB5AB, bits(+32)=0x61F8
+a, sz, fo = secs['__objc_data']
+chk('isa', fo, 0x6AE1)
+chk('superclass', fo+8, 0xB5AB)
+chk('bits(class_ro)', fo+32, 0x61F8)
 sys.exit(0 if ok else 1)
 PYEOF
 

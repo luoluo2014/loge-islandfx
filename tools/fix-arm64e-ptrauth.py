@@ -25,8 +25,15 @@ protocol/ivar/property/name/cache 指针要么是 PtrauthRaw（透传不认证�
 import struct
 import sys
 
-DISCRIMINATOR = 0x6AE1
-KEY_ASDA = 2
+# 各 ObjC 指针的 ptrauth discriminator（clang PointerAuthOptions.h 定义）：
+#   isa               0x6AE1  ptrauth_string_discriminator("isa")
+#   superclass        0xB5AB  ptrauth_string_discriminator("objc_class:superclass")
+#   class_ro (bits)   0x61F8  ptrauth_string_discriminator("class_data_bits")
+#   method list       0xC310  ptrauth_string_discriminator("method_list_t")（ld64 已处理）
+DISC_ISA       = 0x6AE1
+DISC_SUPER     = 0xB5AB
+DISC_CLASS_RO  = 0x61F8
+KEY_ASDA = 2  # ptrauth_key_process_independent_data
 
 def parse_macho(path):
     data = open(path, 'rb').read()
@@ -51,20 +58,20 @@ def parse_macho(path):
 def next_bits(v):
     return (v >> 51) & 0x7FF
 
-def sign_rebase(v):
+def sign_rebase(v, discriminator):
     target = v & 0xFFFFFFFF
     nxt = next_bits(v)
     return ((1 << 63) | (nxt << 51) | (KEY_ASDA << 49) | (1 << 48)
-            | (DISCRIMINATOR << 32) | target)
+            | (discriminator << 32) | target)
 
-def sign_bind(v):
+def sign_bind(v, discriminator):
     ordinal = v & 0xFFFFFF
     nxt = next_bits(v)
     return ((1 << 63) | (1 << 62) | (nxt << 51) | (KEY_ASDA << 49)
-            | (1 << 48) | (DISCRIMINATOR << 32) | ordinal)
+            | (1 << 48) | (discriminator << 32) | ordinal)
 
-def sign(v):
-    return sign_bind(v) if ((v >> 62) & 1) else sign_rebase(v)
+def sign(v, discriminator):
+    return sign_bind(v, discriminator) if ((v >> 62) & 1) else sign_rebase(v, discriminator)
 
 def patch(data, fileoff, value):
     struct.pack_into('<Q', data, fileoff, value)
@@ -79,31 +86,31 @@ def main(path):
                 return (a, sz, fo)
         return None
 
-    # 1) __objc_classlist：全是类指针（rebase）
+    # 1) __objc_classlist：全是类指针（rebase，isa 判别子 0x6AE1）
     cl = find('__objc_classlist')
     if cl:
         a, sz, fo = cl
         for i in range(sz // 8):
             off = fo + i * 8
             v = struct.unpack_from('<Q', data, off)[0]
-            patch(data, off, sign_rebase(v))
+            patch(data, off, sign_rebase(v, DISC_ISA))
             stats['classlist'] += 1
 
     # 2) __objc_data：类对象（40 字节一条，类+元类交替）
-    #    +0 isa(rebase) +8 superclass(bind) +16 cache(plain,跳过) +24 mask(跳过) +32 bits(rebase)
+    #    +0 isa(rebase,0x6AE1) +8 superclass(bind,0xB5AB) +16 cache(plain,跳过)
+    #    +24 mask(跳过) +32 bits(rebase,0x61F8)
     od = find('__objc_data')
     if od:
         a, sz, fo = od
         for i in range(sz // 40):
             base = fo + i * 40
-            for field_off, kind in ((0, 'rebase'), (8, 'auto'), (32, 'rebase')):
+            for field_off, disc in ((0, DISC_ISA), (8, DISC_SUPER), (32, DISC_CLASS_RO)):
                 off = base + field_off
                 v = struct.unpack_from('<Q', data, off)[0]
-                nv = sign_rebase(v) if kind == 'rebase' else sign(v)
-                patch(data, off, nv)
+                patch(data, off, sign(v, disc))
                 stats['class_obj'] += 1
 
-    # 3) __objc_classrefs / __objc_superrefs：类引用（bind 或 rebase 都有）
+    # 3) __objc_classrefs / __objc_superrefs：类引用（0x6AE1）
     for secname, key in (('__objc_classrefs', 'classrefs'), ('__objc_superrefs', 'superrefs')):
         r = find(secname)
         if r:
@@ -111,7 +118,7 @@ def main(path):
             for i in range(sz // 8):
                 off = fo + i * 8
                 v = struct.unpack_from('<Q', data, off)[0]
-                patch(data, off, sign(v))
+                patch(data, off, sign(v, DISC_ISA))
                 stats[key] += 1
 
     open(path, 'wb').write(data)
@@ -119,7 +126,8 @@ def main(path):
     print('  类对象字段(isa/super/bits): %d' % stats['class_obj'])
     print('  classrefs: %d' % stats['classrefs'])
     print('  superrefs: %d' % stats['superrefs'])
-    print('  discriminator=0x%04X key=%d(ASDA) addrDiv=1' % (DISCRIMINATOR, KEY_ASDA))
+    print('  isa=0x%04X super=0x%04X class_ro=0x%04X key=%d(ASDA) addrDiv=1'
+          % (DISC_ISA, DISC_SUPER, DISC_CLASS_RO, KEY_ASDA))
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
