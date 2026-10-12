@@ -19,7 +19,19 @@ jobs:
 
       - name: 安装 roothide Theos
         run: |
-          bash -c "$(curl -fsSL https://raw.githubusercontent.com/roothide/theos/master/bin/install-theos)"
+          export THEOS="$HOME/theos"
+          export PATH="$THEOS/bin:$PATH"
+          # install-theos 里 SDK 下载走匿名 GitHub API，容易被限流（ERROR: api.github.com request failed）
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/roothide/theos/master/bin/install-theos)" || echo "install-theos 部分失败（通常只是 SDK 下载被限流），继续手动补装"
+          # 用认证 token 手动补装 SDK，绕开匿名限流
+          if ! ls "$THEOS/sdks/" 2>/dev/null | grep -q "iPhoneOS16.5.sdk"; then
+            mkdir -p "$THEOS/sdks"
+            URL=$(curl -fsSL -H "Authorization: token $GITHUB_TOKEN" "https://api.github.com/repos/theos/sdks/releases/latest" | grep -o 'https://[^"]*iPhoneOS16.5.sdk.tar.xz' | head -1)
+            echo "下载 SDK: $URL"
+            curl -fsSL "$URL" -o /tmp/sdk.tar.xz
+            tar -xJf /tmp/sdk.tar.xz -C "$THEOS/sdks/"
+          fi
+          echo "=== 已安装的 SDK ===" && ls "$THEOS/sdks/"
 
       - name: 编译打包
         run: |
