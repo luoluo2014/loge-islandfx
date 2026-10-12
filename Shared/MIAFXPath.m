@@ -13,6 +13,7 @@ NSString *MIAFXSettingsPath(void) { return [MIAFXPreferencesDirectory() stringBy
 NSString *MIAFXPanicPath(void) { return [MIAFXPreferencesDirectory() stringByAppendingPathComponent:@"panic.plist"]; }
 NSString *MIAFXDiagnosticsPath(void) { return [MIAFXPreferencesDirectory() stringByAppendingPathComponent:@"diagnostics.plist"]; }
 NSString *MIAFXLogPath(void) { return [MIAFXDataDirectory() stringByAppendingPathComponent:@"Logs/miafx.log"]; }
+NSString *MIAFXVideoDiagPath(void) { return [MIAFXDataDirectory() stringByAppendingPathComponent:@"Logs/video-diag.log"]; }
 
 BOOL MIAFXEnsureDirectory(NSString *path, NSError **error) {
     if (path.length == 0) return NO;

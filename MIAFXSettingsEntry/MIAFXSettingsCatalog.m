@@ -465,6 +465,7 @@ static MIAFXSettingSection *MIASection(NSString *title, NSString * _Nullable foo
             ]),
             MIASection(@"素材位置", @"", @[
                 MIAActionSpec(MIAFXActionFilzaVideos, @"在 Filza 中打开视频目录", @"跳转到 Videos 文件夹查看/管理已导入的素材。"),
+                MIAActionSpec(MIAFXActionFilzaLogs, @"打开诊断日志目录", @"视频背景不生效时，进入 Logs 目录把 video-diag.log 发给作者定位问题。"),
             ]),
             MIASection(@"本组默认值", @"", @[
                 MIAActionSpec(MIAFXResetPageIdentifier(@"islandBackground"), @"恢复本组默认", @"把紧凑与展开视频相关参数恢复为出厂值。"),

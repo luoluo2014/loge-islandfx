@@ -18,6 +18,7 @@
 #import <mach-o/dyld.h>
 #import <notify.h>
 #import <objc/runtime.h>
+#import <unistd.h>
 
 #import "MIAFXClock.h"
 #import "MIAFXConfig.h"
@@ -113,17 +114,25 @@ static void MIAFXScheduleBootStable(void) {
 
 %ctor {
     @autoreleasepool {
+        // 最早一条诊断：先于一切门控，用于确认 dylib 是否真的被注入
+        MIAFXDiag(@"ctor 进入：进程=%@ PID=%d 系统=%@", NSProcessInfo.processInfo.processName, getpid(), MIAFXSystemVersionString());
+        MIAFXDiag(@"_SPIslandRenderSurface 类存在：%d", objc_getClass("_SPIslandRenderSurface") != NULL);
+
         if (!MIAFXIsSpringBoardProcess()) {
+            MIAFXDiag(@"非 SpringBoard 进程，跳过");
             return;
         }
         if (!MIAFXIsSupportedSystemVersion()) {
             MIAFXLog(@"系统版本不支持（%@），MIAFX 未启用", MIAFXSystemVersionString());
+            MIAFXDiag(@"系统版本不支持：%@", MIAFXSystemVersionString());
             return;
         }
         if (!MIAFXBeginBootGuard()) {
             MIAFXLog(@"启动保护已触发，本次启动不加载 MIAFX");
+            MIAFXDiag(@"启动保护触发（连续重启未达稳定），本次不加载；删除 Preferences/panic.plist 可重置");
             return;
         }
+        MIAFXDiag(@"boot guard 通过，开始初始化");
         gMIAFXBootGuardPassed = YES;
 
         // .xm 会被 Logos 预处理成 ObjC++，这里用 NULL 而不是 nil，避免 C++ 重载歧义
@@ -157,6 +166,7 @@ static void MIAFXScheduleBootStable(void) {
         MIAFXScheduleBootStable();
 
         MIAFXLog(@"MIAFX 已在 SpringBoard(%@) 就绪", MIAFXSystemVersionString());
+        MIAFXDiag(@"MIAFX 初始化完成，等待灵动岛触发");
     }
 }
 
