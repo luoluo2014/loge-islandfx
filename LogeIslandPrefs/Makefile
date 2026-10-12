@@ -1,11 +1,12 @@
 include $(THEOS)/makefiles/common.mk
 
 BUNDLE_NAME = LogeIslandPrefs
-LogeIslandPrefs_FILES = $(wildcard *.m CustomCells/*.m)
+LogeIslandPrefs_FILES = $(wildcard *.m CustomCells/*.m) \
+	../Shared/LOGXConfig.m ../Shared/LOGXPath.m ../Shared/LOGXLog.m
 LogeIslandPrefs_INSTALL_PATH = /Library/PreferenceBundles
 LogeIslandPrefs_FRAMEWORKS = UIKit Foundation CoreGraphics QuartzCore PhotosUI
 LogeIslandPrefs_PRIVATE_FRAMEWORKS = Preferences
-LogeIslandPrefs_CFLAGS = -fobjc-arc -Wall
+LogeIslandPrefs_CFLAGS = -fobjc-arc -Wall -I../Shared -I../LogeIslandFX -I. -I./CustomCells
 LogeIslandPrefs_LDFLAGS = -undefined dynamic_lookup
 
 include $(THEOS_MAKE_PATH)/bundle.mk
