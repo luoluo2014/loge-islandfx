@@ -14,7 +14,7 @@ MIAFXSettingsEntry_FILES = \
 	../Shared/MIAFXLog.m \
 	../Shared/MIAFXSafe.m \
 	../Shared/MIAFXIPC.c
-MIAFXSettingsEntry_FRAMEWORKS = UIKit Foundation QuartzCore CoreGraphics AVFoundation UniformTypeIdentifiers
+MIAFXSettingsEntry_FRAMEWORKS = UIKit Foundation QuartzCore CoreGraphics AVFoundation UniformTypeIdentifiers PhotosUI
 MIAFXSettingsEntry_CFLAGS = -fobjc-arc -Wall -I../Shared
 MIAFXSettingsEntry_LIBRARIES = roothide
 MIAFXSettingsEntry_LDFLAGS = -undefined dynamic_lookup

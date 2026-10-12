@@ -418,16 +418,16 @@ static MIAFXSettingSection *MIASection(NSString *title, NSString * _Nullable foo
         [pages addObject:page];
     }
 
-    // 2) 紧凑视频
+    // 2) 灵动岛背景（紧凑 + 展开）
     {
         MIAFXSettingPage *page = [[MIAFXSettingPage alloc] init];
-        page.identifier = @"compactVideo";
-        page.title = @"紧凑视频";
-        page.pageDescription = @"紧凑（未展开）状态下胶囊内播放的背景视频";
+        page.identifier = @"islandBackground";
+        page.title = @"灵动岛背景";
+        page.pageDescription = @"把原生灵动岛的胶囊底色替换为自定义视频，紧凑与展开两种状态分别配置。";
         page.sections = @[
-            MIASection(@"紧凑视频", @"视频素材请放到「素材与诊断」中的 Videos 目录，建议时长 1~3 秒循环、带透明通道。", @[
-                MIASwitchSpec(@"Compact.Video.Enabled", @"启用紧凑视频", @"单独控制紧凑状态视频层（同时需要全局「视频层」位开启）。"),
-                MIAPathSpec(@"Compact.Video.Path", @"视频文件路径", @"留空表示不加载素材。也可以直接从 Filza 或文件选择器中挑选。"),
+            MIASection(@"紧凑", @"未展开状态下胶囊内播放的背景视频；素材放到 Videos 目录，建议 1~3 秒循环、带透明通道。", @[
+                MIASwitchSpec(@"Compact.Video.Enabled", @"启用紧凑背景", @"单独控制紧凑状态视频层（同时需要全局「视频层」位开启）。"),
+                MIAPathSpec(@"Compact.Video.Path", @"背景视频", @"点击选择来源：可从相册添加、从「文件」选取，或在 Filza 中查看素材目录。"),
                 MIAEnumSpec(@"Compact.Video.FillMode", @"填充模式", @"决定视频如何适配胶囊区域。", @[
                     MIAOpt(@"拉伸填满", @"拉伸到完整胶囊，可能变形。", @0),
                     MIAOpt(@"等比裁切", @"等比放大填满并裁切多余部分。", @1),
@@ -444,26 +444,9 @@ static MIAFXSettingSection *MIASection(NSString *title, NSString * _Nullable foo
                 ]),
                 MIADependent(MIANumberSpec(@"Compact.Video.CornerRadius", @"自定义圆角半径", @"仅在圆角模式为「自定义半径」时生效。", 0.0, 60.0, 0.5, 1, @"pt"), @"Compact.Video.CornerMode", @[@2]),
             ]),
-            MIASection(@"素材位置", @"", @[
-                MIAActionSpec(MIAFXActionFilzaVideos, @"在 Filza 中打开视频目录", @"跳转到数据目录下的 Videos 文件夹。"),
-            ]),
-            MIASection(@"本组默认值", @"", @[
-                MIAActionSpec(MIAFXResetPageIdentifier(@"compactVideo"), @"恢复本组默认", @"把紧凑视频相关参数恢复为出厂值。"),
-            ]),
-        ];
-        [pages addObject:page];
-    }
-
-    // 3) 展开视频
-    {
-        MIAFXSettingPage *page = [[MIAFXSettingPage alloc] init];
-        page.identifier = @"expandedVideo";
-        page.title = @"展开视频";
-        page.pageDescription = @"长按时展开状态下胶囊内播放的背景视频";
-        page.sections = @[
-            MIASection(@"展开视频", @"展开区域更高，建议使用横向比例更大的素材。", @[
-                MIASwitchSpec(@"Expanded.Video.Enabled", @"启用展开视频", @"单独控制展开状态视频层（同时需要全局「视频层」位开启）。"),
-                MIAPathSpec(@"Expanded.Video.Path", @"视频文件路径", @"留空表示不加载素材。"),
+            MIASection(@"展开", @"长按展开状态下胶囊内播放的背景视频；展开区域更高，建议使用横向比例更大的素材。", @[
+                MIASwitchSpec(@"Expanded.Video.Enabled", @"启用展开背景", @"单独控制展开状态视频层（同时需要全局「视频层」位开启）。"),
+                MIAPathSpec(@"Expanded.Video.Path", @"背景视频", @"点击选择来源：可从相册添加、从「文件」选取，或在 Filza 中查看素材目录。"),
                 MIAEnumSpec(@"Expanded.Video.FillMode", @"填充模式", @"决定视频如何适配展开区域。", @[
                     MIAOpt(@"拉伸填满", @"拉伸到完整区域，可能变形。", @0),
                     MIAOpt(@"等比裁切", @"等比放大填满并裁切多余部分。", @1),
@@ -480,8 +463,11 @@ static MIAFXSettingSection *MIASection(NSString *title, NSString * _Nullable foo
                 ]),
                 MIADependent(MIANumberSpec(@"Expanded.Video.CornerRadius", @"自定义圆角半径", @"仅在圆角模式为「自定义半径」时生效。", 0.0, 80.0, 0.5, 1, @"pt"), @"Expanded.Video.CornerMode", @[@2]),
             ]),
+            MIASection(@"素材位置", @"", @[
+                MIAActionSpec(MIAFXActionFilzaVideos, @"在 Filza 中打开视频目录", @"跳转到 Videos 文件夹查看/管理已导入的素材。"),
+            ]),
             MIASection(@"本组默认值", @"", @[
-                MIAActionSpec(MIAFXResetPageIdentifier(@"expandedVideo"), @"恢复本组默认", @"把展开视频相关参数恢复为出厂值。"),
+                MIAActionSpec(MIAFXResetPageIdentifier(@"islandBackground"), @"恢复本组默认", @"把紧凑与展开视频相关参数恢复为出厂值。"),
             ]),
         ];
         [pages addObject:page];

@@ -189,7 +189,7 @@ for arch in $ARCHS; do
         "$objs"/entry-*.o \
         -lSystem -lobjc -lc++ \
         -framework Foundation -framework UIKit -framework QuartzCore \
-        -framework CoreGraphics -framework UniformTypeIdentifiers \
+        -framework CoreGraphics -framework UniformTypeIdentifiers -framework PhotosUI \
         -framework Preferences -L"$RH" -lroothide || die "链接设置入口失败"
 done
 

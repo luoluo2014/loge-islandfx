@@ -15,6 +15,7 @@
 #import "MIAFXSettingsCatalog.h"
 
 #import <notify.h>
+#import <PhotosUI/PhotosUI.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #include <stdlib.h>
 
@@ -463,6 +464,7 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
                                        UISearchResultsUpdating,
                                        UISearchControllerDelegate,
                                        UIDocumentPickerDelegate,
+                                       PHPickerViewControllerDelegate,
                                        MIAFXNumberControlCellDelegate>
 
 @property (nonatomic, strong) UITableView *tableView;
@@ -478,6 +480,7 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
 @property (nonatomic) BOOL pendingReload;
 @property (nonatomic, strong, nullable) NSURL *currentExportURL;
 @property (nonatomic, copy, nullable) NSString *pendingImportSpecKey;
+@property (nonatomic, copy, nullable) NSString *pendingPhotoSpecKey;
 @end
 
 @implementation MIAFXRootViewController
@@ -912,6 +915,11 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
                                                                   message:spec.specDescription
                                                            preferredStyle:UIAlertControllerStyleActionSheet];
     __weak typeof(self) weakSelf = self;
+    if ([self specSupportsPhotoImport:spec]) {
+        [sheet addAction:[UIAlertAction actionWithTitle:@"从相册添加视频" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            [weakSelf presentPhotoPickerForSpec:spec];
+        }]];
+    }
     [sheet addAction:[UIAlertAction actionWithTitle:@"手动输入路径" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         [weakSelf presentPathEditorForSpec:spec];
     }]];
@@ -1285,6 +1293,78 @@ static NSString *const kMIAFXValueCellIdentifier = @"MIAFX.Value";
 
 - (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)controller {
     (void)controller;
+}
+
+#pragma mark PHPickerViewControllerDelegate（从相册添加视频）
+
+- (BOOL)specSupportsPhotoImport:(MIAFXSettingSpec *)spec {
+    return [spec.key isEqualToString:@"Compact.Video.Path"] || [spec.key isEqualToString:@"Expanded.Video.Path"];
+}
+
+- (void)presentPhotoPickerForSpec:(MIAFXSettingSpec *)spec {
+    if (@available(iOS 14.0, *)) {
+        PHPickerConfiguration *configuration = [[PHPickerConfiguration alloc] init];
+        configuration.filter = PHPickerFilter.videosFilter;
+        configuration.selectionLimit = 1;
+        PHPickerViewController *picker = [[PHPickerViewController alloc] initWithConfiguration:configuration];
+        picker.delegate = self;
+        self.pendingPhotoSpecKey = spec.key;
+        [self presentViewController:picker animated:YES completion:nil];
+    }
+}
+
+- (void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPickerResult *> *)results {
+    [picker dismissViewControllerAnimated:YES completion:nil];
+    NSString *targetKey = self.pendingPhotoSpecKey;
+    self.pendingPhotoSpecKey = nil;
+    if (targetKey.length == 0) return;
+    PHPickerResult *result = results.firstObject;
+    if (!result) return;
+    NSString *movieType = @"public.movie";
+    if (![result.itemProvider hasItemConformingToTypeIdentifier:movieType]) {
+        [self showErrorAlert:@"所选内容不是视频"];
+        return;
+    }
+    __weak typeof(self) weakSelf = self;
+    [result.itemProvider loadFileRepresentationForTypeIdentifier:movieType completionHandler:^(NSURL *url, NSError *error) {
+        if (!url || error) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [weakSelf showErrorAlert:error.localizedDescription ?: @"无法读取所选视频"];
+            });
+            return;
+        }
+        NSError *copyError = nil;
+        NSString *destPath = [weakSelf importVideoToVideosDirectory:url error:&copyError];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (destPath.length == 0) {
+                [weakSelf showErrorAlert:copyError.localizedDescription ?: @"导入视频失败"];
+                return;
+            }
+            MIAFXSettingSpec *spec = [weakSelf specForKey:targetKey];
+            if (spec) {
+                [[MIAFXSettingsCatalog sharedCatalog] stageObject:destPath forSpec:spec];
+                [weakSelf commitAndRefresh];
+                [weakSelf showNotice:[NSString stringWithFormat:@"已添加视频：%@", destPath.lastPathComponent]];
+            }
+        });
+    }];
+}
+
+- (nullable NSString *)importVideoToVideosDirectory:(NSURL *)sourceURL error:(NSError **)error {
+    [[MIAFXFilzaLauncher sharedLauncher] ensureDirectories];
+    NSString *directory = [[MIAFXFilzaLauncher sharedLauncher] videosDirectory];
+    NSString *extension = sourceURL.pathExtension.length > 0 ? sourceURL.pathExtension : @"mp4";
+    NSFileManager *manager = [NSFileManager defaultManager];
+    NSString *base = [NSString stringWithFormat:@"album_%lld", (long long)[[NSDate date] timeIntervalSince1970]];
+    NSString *dest = [directory stringByAppendingPathComponent:[base stringByAppendingPathExtension:extension]];
+    NSUInteger index = 1;
+    while ([manager fileExistsAtPath:dest]) {
+        NSString *name = [NSString stringWithFormat:@"%@_%lu", base, (unsigned long)index];
+        dest = [directory stringByAppendingPathComponent:[name stringByAppendingPathExtension:extension]];
+        index += 1;
+    }
+    if (![manager copyItemAtURL:sourceURL toURL:[NSURL fileURLWithPath:dest] error:error]) return nil;
+    return dest;
 }
 
 - (nullable MIAFXSettingSpec *)specForKey:(NSString *)key {
