@@ -1,5 +1,6 @@
 #!/bin/sh
 uicache -a >/dev/null 2>&1 || true
 killall Preferences >/dev/null 2>&1 || true
-sbreload >/dev/null 2>&1 || true
+# 延迟到后台 respring：避免在 dpkg 安装中途直接重载 SpringBoard 而中断安装流程。
+( sleep 2; sbreload >/dev/null 2>&1 ) &
 exit 0
