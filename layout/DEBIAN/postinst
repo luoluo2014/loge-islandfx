@@ -1,4 +1,14 @@
 #!/bin/sh
+# 清理 1.4.x 旧版残留（旧版文件名与 2.0.x 完全不同，dpkg 升级不会自动删除，
+# 会导致旧 tweak/旧设置入口与新版并存，点旧入口即崩）。逻辑路径由 RootHide
+# 安装时重定位到 jbroot。
+rm -f  /Library/MobileSubstrate/DynamicLibraries/MIAFX.dylib 2>/dev/null || true
+rm -f  /Library/MobileSubstrate/DynamicLibraries/MIAFX.plist 2>/dev/null || true
+rm -f  /Library/MobileSubstrate/DynamicLibraries/MIAFXAudio.dylib 2>/dev/null || true
+rm -f  /Library/MobileSubstrate/DynamicLibraries/MIAFXAudio.plist 2>/dev/null || true
+rm -rf /Library/PreferenceBundles/MIAFXSettingsEntry.bundle 2>/dev/null || true
+rm -f  /Library/PreferenceLoader/Preferences/MIAFX.plist 2>/dev/null || true
+
 uicache -a >/dev/null 2>&1 || true
 killall Preferences >/dev/null 2>&1 || true
 # 延迟 respring。三个要点：
