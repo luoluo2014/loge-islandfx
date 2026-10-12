@@ -110,6 +110,18 @@ static NSTimeInterval s_configSnapshotAt = 0;
     }
 }
 
++ (void)suspendAll {
+    for (id surface in [_LOGXKnownSurfaces() copy]) {
+        if (![surface isKindOfClass:_SPIslandRenderSurface.class]) continue;
+        @autoreleasepool {
+            LOGXVideoBackground *background = [LOGXVideoBackground backgroundForSurface:surface];
+            [background stop];
+            background.layer.hidden = YES;   // 双保险：连最后一帧也不留
+        }
+    }
+    LOGXDiag(@"注销前置：已停止全部视频渲染");
+}
+
 + (LOGXVideoBackground *)backgroundForSurface:(UIView *)surface {
     LOGXVideoBackground *background = objc_getAssociatedObject(surface, kLOGXVideoBackgroundKey);
     if (background == nil) {

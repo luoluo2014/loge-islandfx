@@ -22,6 +22,11 @@ NS_ASSUME_NONNULL_BEGIN
 /// 停止全部播放（插件暂停时调用）
 + (void)stopAll;
 
+/// 注销前置：停止全部播放并隐藏图层（设置端执行注销前调用）。
+/// 与 stopAll 的区别：额外隐藏 player layer，保证 SpringBoard 重载期间
+/// 不残留任何视频帧；下一次 trigger 会经 syncIfNeeded 自动恢复。
++ (void)suspendAll;
+
 @end
 
 NS_ASSUME_NONNULL_END

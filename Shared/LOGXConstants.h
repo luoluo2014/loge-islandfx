@@ -12,10 +12,14 @@
 #include <stdint.h>
 
 #define LOGX_PACKAGE_ID "com.loge.islandfx"
-#define LOGX_PLUGIN_VERSION_STRING @"2.0.0"
+#define LOGX_PLUGIN_VERSION_STRING @"2.0.1"
 
 /// 配置变更通知：设置端写入后投递，插件端立即重新评估（5 秒轮询之外的加速通道）
 #define LOGX_NOTIFY_RELOAD "com.loge.islandfx.reload"
+
+/// 注销前置通知：设置端执行注销前投递，插件端立即停止全部渲染，
+/// 避免 SpringBoard 重载期间出现半死状态（黑屏恢复过程的保险丝）
+#define LOGX_NOTIFY_SUSPEND "com.loge.islandfx.suspend"
 
 #pragma mark - 用户配置键（CFPreferences app-id 域，两端直读直写）
 
@@ -44,6 +48,7 @@
 #define LOGX_KEY_LOG_TAIL         @"Logs.Tail"             // 诊断日志尾部（设置端展示用）
 #define LOGX_KEY_LOG_SIZE         @"Logs.Size"
 #define LOGX_KEY_LOG_CLEAR_REQ    @"Logs.ClearRequest"     // 设置端请求清空日志
+#define LOGX_KEY_INTENTIONAL_RESPRING @"Plugin.IntentionalRespring"  // 设置端注销前置标记：告知插件端这是用户主动重启，清零崩溃循环计数
 
 #pragma mark - 默认值（两端保持一致）
 

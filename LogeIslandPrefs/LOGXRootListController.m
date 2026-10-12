@@ -10,6 +10,7 @@
 
 #import <notify.h>
 #import <spawn.h>
+#import <sys/wait.h>
 
 @implementation LOGXRootListController
 
@@ -76,14 +77,35 @@
 
 - (void)performRespring {
     [self.view endEditing:YES];
-    pid_t pid;
-    const char *args[] = {"sbreload", NULL};
-    int status = posix_spawn(&pid, "/usr/bin/sbreload", NULL, NULL, (char *const *)args, NULL);
-    if (status != 0) {
-        // 兜底：直接强杀 SpringBoard（RootHide 环境同样有效）
+
+    // 1) 立刻让插件停止全部渲染：黑屏恢复期间不残留任何视频帧
+    notify_post(LOGX_NOTIFY_SUSPEND);
+
+    // 2) 告知插件端「这是用户主动注销」：崩溃循环保护计数清零，
+    //    避免把正常重启误判成异常循环而暂停（2.0.0 的误判源）
+    LOGXPrefsSetObject(@YES, LOGX_KEY_INTENTIONAL_RESPRING);
+    LOGXPrefsSynchronize();
+
+    // 3) 稍等 0.3 秒让 cfprefsd 完成代写，再执行重启；
+    //    用 dispatch_after 而不是 usleep，避免阻塞 UI 线程
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        pid_t pid;
+        // 主路径：killall -9 SpringBoard。launchd 立即重拉，1~2 秒恢复。
+        // 不用 sbreload 打头——它在 Preferences 沙盒视图下未必存在，且其内部
+        // 恢复流程在部分环境会挂起，正是「先黑屏再卡死」的成因（postinst 以
+        // root 运行时无此问题，1.4.x 安装 respring 一直正常）。
         const char *killArgs[] = {"-9", "SpringBoard", NULL};
-        posix_spawn(&pid, "/usr/bin/killall", NULL, NULL, (char *const *)killArgs, NULL);
-    }
+        int status = posix_spawn(&pid, "/usr/bin/killall", NULL, NULL, (char *const *)killArgs, NULL);
+        if (status == 0) {
+            int waitStatus = 0;
+            waitpid(pid, &waitStatus, 0);   // killall 毫秒级返回，不会拖住 UI
+            if (WIFEXITED(waitStatus) && WEXITSTATUS(waitStatus) == 0) return;
+        }
+        // 备选：sbreload（RootHide 官方重启，root 环境验证可用）
+        const char *args[] = {"sbreload", NULL};
+        posix_spawn(&pid, "/usr/bin/sbreload", NULL, NULL, (char *const *)args, NULL);
+    });
 }
 
 @end

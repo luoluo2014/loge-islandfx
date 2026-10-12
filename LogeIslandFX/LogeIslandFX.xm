@@ -215,6 +215,7 @@ static void LOGXDyldImageCallback(const struct mach_header *mhp, intptr_t vmaddr
 static int LOGXRenderContextToken = -1;
 static int LOGXSuppressionToken = -1;
 static int LOGXReloadToken = -1;
+static int LOGXStopToken = -1;
 
 static void LOGXRegisterSystemNotifications(void) {
     // 这两个通知由系统在灵动岛渲染上下文/抑制状态变化时投递（DynamicFX 同源）
@@ -234,14 +235,23 @@ static void LOGXRegisterSystemNotifications(void) {
         [LOGXVideoBackground invalidateConfigCache];
         [LOGXVideoBackground triggerAll:@"config.reload"];
     });
-    LOGXDiag(@"已注册系统通知 SPRenderContextChangedNotif / SPNotifSuppressionChangedNotif / %s", LOGX_NOTIFY_RELOAD);
+    // 注销前置：立刻停掉全部播放并隐藏图层，黑屏恢复期间不留半死状态
+    notify_register_dispatch(LOGX_NOTIFY_SUSPEND, &LOGXStopToken, dispatch_get_main_queue(), ^(int token) {
+        (void)token;
+        [LOGXVideoBackground suspendAll];
+    });
+    LOGXDiag(@"已注册系统通知 SPRenderContextChangedNotif / SPNotifSuppressionChangedNotif / %s / %s",
+             LOGX_NOTIFY_RELOAD, LOGX_NOTIFY_SUSPEND);
 }
 
 #pragma mark - 崩溃循环保护
 
 static BOOL LOGXSuspended = NO;
-static const NSTimeInterval kLOGXFastLoadWindow = 30.0;   // 30 秒内连续加载视为异常
-static const NSInteger kLOGXFastLoadLimit = 2;            // 连续两次即暂停
+// 真崩溃循环：SpringBoard 被 launchd 反复重拉，间隔通常 1~3 秒；
+// 用户主动注销/覆盖安装到下一次加载至少十几秒。窗口收到 12 秒、
+// 阈值提到 3 次，既抓得住崩溃循环，也不会再把正常操作误判成异常。
+static const NSTimeInterval kLOGXFastLoadWindow = 12.0;
+static const NSInteger kLOGXFastLoadLimit = 3;
 
 static void LOGXWriteBootState(double lastLoadAt, NSInteger fastLoads) {
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
@@ -251,6 +261,14 @@ static void LOGXWriteBootState(double lastLoadAt, NSInteger fastLoads) {
 }
 
 static void LOGXEvaluateBootGuard(void) {
+    // 设置端注销前会写 IntentionalRespring 标记：这是用户主动重启，直接清零计数
+    if ([LOGXPrefsObject(LOGX_KEY_INTENTIONAL_RESPRING) boolValue]) {
+        LOGXPrefsRemoveObject(LOGX_KEY_INTENTIONAL_RESPRING);
+        LOGXWriteBootState(0.0, 0);
+        LOGXDiag(@"检测到用户主动注销标记：崩溃循环计数已清零");
+        return;
+    }
+
     NSDictionary *state = [NSDictionary dictionaryWithContentsOfFile:LOGXBootStatePath()];
     double last = [state[@"lastLoadAt"] doubleValue];
     NSInteger fast = [state[@"fastLoads"] integerValue];
