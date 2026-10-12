@@ -1,7 +1,7 @@
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = MIAFX
-MIAFX_FILES = MIAFXMain.xm \
+MIAFX_FILES = MIAFXMain.xm MIAFXVideoBackground.xm \
 	MIAFXClock.m MIAFXPassthroughView.m MIAFXStateCoordinator.m \
 	MIAFXIslandHostBridge.m MIAFXNativeElementBridge.m MIAFXRootRenderer.m \
 	MIAFXVideoLayer.m MIAFXBreathing.m MIAFXMarqueeFX.m MIAFXOrbitFX.m \

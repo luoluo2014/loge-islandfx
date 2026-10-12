@@ -54,7 +54,7 @@ mkdir -p "$WORK" "$STAGE"
 # ---------------------------------------------------------------- Logos 预处理
 log "Logos 预处理"
 mkdir -p "$WORK/logos"
-for xm in "$SRC"/MIAFX/MIAFXMain.xm "$SRC"/MIAFXAudio/MIAFXAudioMain.xm; do
+for xm in "$SRC"/MIAFX/MIAFXMain.xm "$SRC"/MIAFX/MIAFXVideoBackground.xm "$SRC"/MIAFXAudio/MIAFXAudioMain.xm; do
     base="$(basename "$xm" .xm)"
     perl "$LOGOS" "$xm" > "$WORK/logos/$base.mm" || die "Logos 处理失败：$xm"
     printf '  %s -> %s.mm (%s 行)\n' "$(basename "$xm")" "$base" "$(wc -l < "$WORK/logos/$base.mm" | tr -d ' ')"
@@ -66,7 +66,7 @@ compile_one() {
     [ "$arch" = "arm64e" ] && triple="arm64e-apple-ios$MINVER"
 
     local flags="-target $triple -miphoneos-version-min=$MINVER -isysroot $SDK"
-    flags="$flags -isystem $SDK/usr/include -I$SDK/usr/include"
+    flags="$flags -isystem $SDK/usr/include/c++/v1 -isystem $SDK/usr/include"
     flags="$flags $COMMON_INC"
     flags="$flags -Wall -Wno-unused-parameter -Wno-deprecated-declarations -Wno-unused-variable"
     flags="$flags $PTRAUTH_FLAG"
@@ -118,7 +118,7 @@ for arch in $ARCHS; do
 
     # SpringBoard tweak
     i=0
-    for f in "$WORK/logos/MIAFXMain.mm" \
+    for f in "$WORK/logos/MIAFXMain.mm" "$WORK/logos/MIAFXVideoBackground.mm" \
              "$SRC"/MIAFX/MIAFXClock.m "$SRC"/MIAFX/MIAFXPassthroughView.m \
              "$SRC"/MIAFX/MIAFXStateCoordinator.m "$SRC"/MIAFX/MIAFXIslandHostBridge.m \
              "$SRC"/MIAFX/MIAFXNativeElementBridge.m "$SRC"/MIAFX/MIAFXRootRenderer.m \
