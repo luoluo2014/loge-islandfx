@@ -27,6 +27,17 @@
 @interface _SPIslandRenderSurface : UIView
 @end
 
+/// 运行时查找灵动岛渲染表面类（2.0.11）：私有类不在任何 SDK 里，
+/// 且 dylib 注入时该类可能尚未注册，不能用编译期符号引用
+///（那会迫使链接器加 -undefined dynamic_lookup，进而禁用 chained fixups，
+/// 弄丢 arm64e 类指针的 PAC 签名）。类不存在时返回 Nil，调用方需判空。
+static Class LOGXSurfaceClass(void) {
+    static Class cls;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{ cls = objc_getClass("_SPIslandRenderSurface"); });
+    return cls;
+}
+
 @interface LOGXVideoBackground ()
 @property (nonatomic, weak) UIView *surface;
 @property (nonatomic, strong) AVPlayerLayer *layer;
@@ -94,7 +105,7 @@ static NSTimeInterval s_configSnapshotAt = 0;
 
 + (void)triggerAll:(NSString *)reason {
     for (id surface in [_LOGXKnownSurfaces() copy]) {
-        if (![surface isKindOfClass:_SPIslandRenderSurface.class]) continue;
+        if (LOGXSurfaceClass() == Nil || ![surface isKindOfClass:LOGXSurfaceClass()]) continue;
         @autoreleasepool {
             [[LOGXVideoBackground backgroundForSurface:surface] handleTrigger:reason];
         }
@@ -103,7 +114,7 @@ static NSTimeInterval s_configSnapshotAt = 0;
 
 + (void)stopAll {
     for (id surface in [_LOGXKnownSurfaces() copy]) {
-        if (![surface isKindOfClass:_SPIslandRenderSurface.class]) continue;
+        if (LOGXSurfaceClass() == Nil || ![surface isKindOfClass:LOGXSurfaceClass()]) continue;
         @autoreleasepool {
             [[LOGXVideoBackground backgroundForSurface:surface] stop];
         }
@@ -112,7 +123,7 @@ static NSTimeInterval s_configSnapshotAt = 0;
 
 + (void)suspendAll {
     for (id surface in [_LOGXKnownSurfaces() copy]) {
-        if (![surface isKindOfClass:_SPIslandRenderSurface.class]) continue;
+        if (LOGXSurfaceClass() == Nil || ![surface isKindOfClass:LOGXSurfaceClass()]) continue;
         @autoreleasepool {
             LOGXVideoBackground *background = [LOGXVideoBackground backgroundForSurface:surface];
             [background stop];
