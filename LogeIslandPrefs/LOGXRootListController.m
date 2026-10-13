@@ -103,12 +103,13 @@
         // PSListController 调 setSpecifier: 等私有方法而崩（2.0.19 修复）。
         LOGXLogController *logPage = [[LOGXLogController alloc] init];
         [self.navigationController pushViewController:logPage animated:YES];
-    } else if (specifier.target != nil && specifier.action != NULL) {
+    } else if (specifier.target != nil && specifier->action != NULL) {
         // 本方法覆盖了 PSListController 的 didSelectRow，不手动转发的话
         // PSButtonCell 的 action（如「注销重启」）不会触发。
+        // 注意：PSSpecifier.action 是 @public ivar（vendor 头文件里不是 property）
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        [specifier.target performSelector:specifier.action withObject:specifier];
+        [specifier.target performSelector:specifier->action withObject:specifier];
 #pragma clang diagnostic pop
     }
 }
