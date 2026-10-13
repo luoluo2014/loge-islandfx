@@ -39,7 +39,7 @@
 
 - (void)viewDidLoad {
     LOGXStage("prefs-viewDidLoad-enter");
-    LOGXStage("prefs-build-2018");   // 确认设备上跑的是哪一版
+    LOGXStage("prefs-build-2019");   // 确认设备上跑的是哪一版
     [super viewDidLoad];
     self.navigationController.navigationBar.tintColor = kLOGXColor;
     LOGXStage("prefs-viewDidLoad-done");
@@ -97,6 +97,19 @@
         NSString *modeKey = [identifier isEqualToString:@"compactVideo"] ? @"Compact.Path" : @"Expanded.Path";
         LOGXVideoPickerController *picker = [[LOGXVideoPickerController alloc] initWithModeKey:modeKey];
         [self.navigationController pushViewController:picker animated:YES];
+    } else if ([identifier isEqualToString:@"logPage"]) {
+        // 自己 push 而不是走 isController+detail：LOGXLogController 是
+        // UITableViewController，不是 PSViewController 子类，走 detail 会被
+        // PSListController 调 setSpecifier: 等私有方法而崩（2.0.19 修复）。
+        LOGXLogController *logPage = [[LOGXLogController alloc] init];
+        [self.navigationController pushViewController:logPage animated:YES];
+    } else if (specifier.target != nil && specifier.action != NULL) {
+        // 本方法覆盖了 PSListController 的 didSelectRow，不手动转发的话
+        // PSButtonCell 的 action（如「注销重启」）不会触发。
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        [specifier.target performSelector:specifier.action withObject:specifier];
+#pragma clang diagnostic pop
     }
 }
 

@@ -17,6 +17,17 @@
 
 @implementation LOGXHeaderCell
 
+// PSHeaderFooterView 协议的必需入口：Preferences 对 headerCellClass 建分组头部时
+// 调用的是 initWithSpecifier:（PSTableCell 自身并未实现该方法）。2.0.18 及之前
+// 缺少它，首次表格填充（viewWillAppear → reloadData → 建 section 0 头部）时
+// unrecognized selector 崩溃。这里转接到标准初始化器，两条路径都安全。
+- (instancetype)initWithSpecifier:(PSSpecifier *)specifier {
+    LOGXStage("cell-header-initSpec-enter");
+    self = [self initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil specifier:specifier];
+    LOGXStage("cell-header-initSpec-done");
+    return self;
+}
+
 - (instancetype)initWithStyle:(UITableViewCellStyle)style
              reuseIdentifier:(NSString *)reuseIdentifier
                   specifier:(PSSpecifier *)specifier {
