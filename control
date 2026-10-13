@@ -1,6 +1,6 @@
 Package: com.loge.islandfx
 Name: 落格Loge·灵动岛
-Version: 2.0.8
+Version: 2.0.9
 Architecture: iphoneos-arm64e
 Description: 落格出品 · 每一个插件都有他的灵魂。iOS 17 灵动岛背景视频自定义：紧凑（待机）与展开（长按）双状态独立配置，支持相册直接导入、素材目录选取、Filza 管理与诊断日志。
 Maintainer: 落格出品
