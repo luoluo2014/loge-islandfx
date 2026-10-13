@@ -402,32 +402,32 @@ static void LOGXEvaluateBootGuard(void) {
 }
 
 /// 处理设置端的删除请求（删除已落地素材）
+/// 2.0.14：不再用 CFPreferencesCopyKeyList 遍历（它在 SpringBoard 里会崩，stage.log
+/// 定位到 tick-delete 即此处）。改为设置端维护一个待删除文件名队列，这里只读队列。
 + (void)processDeleteRequests {
     LOGXPrefsSynchronize();
-    NSArray *keys = CFBridgingRelease(CFPreferencesCopyKeyList((CFStringRef)LOGX_PACKAGE_ID,
-                                                              kCFPreferencesCurrentUser, kCFPreferencesAnyHost));
-    if (![keys isKindOfClass:NSArray.class]) return;
-    NSString *deletePrefix = @"Import.Delete.";
+    NSArray *queue = LOGXPrefsObject(LOGX_KEY_DELETE_QUEUE);
+    if (![queue isKindOfClass:NSArray.class] || queue.count == 0) return;
+
     BOOL changed = NO;
-    for (NSString *key in keys) {
-        if (![key isKindOfClass:NSString.class] || ![key hasPrefix:deletePrefix]) continue;
-        NSString *name = [key substringFromIndex:deletePrefix.length].lastPathComponent;
-        if (![LOGXPrefsObject(key) boolValue]) {
-            LOGXPrefsRemoveObject(key);
-            continue;
-        }
-        NSString *target = [LOGXVideosDirectory() stringByAppendingPathComponent:name];
+    for (NSString *name in queue) {
+        if (![name isKindOfClass:NSString.class] || name.length == 0) continue;
+        NSString *safeName = name.lastPathComponent;
+        NSString *target = [LOGXVideosDirectory() stringByAppendingPathComponent:safeName];
         NSError *error = nil;
         if ([NSFileManager.defaultManager removeItemAtPath:target error:&error]) {
             changed = YES;
-            LOGXDiag(@"已按设置端请求删除素材：%@", name);
+            LOGXDiag(@"已按设置端请求删除素材：%@", safeName);
         } else if (![NSFileManager.defaultManager fileExistsAtPath:target]) {
-            LOGXDiag(@"删除请求：%@ 已不存在", name);
+            LOGXDiag(@"删除请求：%@ 已不存在", safeName);
         } else {
-            LOGXDiag(@"删除失败：%@（%@）", name, error.localizedDescription ?: @"未知");
+            LOGXDiag(@"删除失败：%@（%@）", safeName, error.localizedDescription ?: @"未知");
         }
-        LOGXPrefsRemoveObject(key);
     }
+    // 清空队列（无论成功与否，避免反复重试同一失败项）
+    LOGXPrefsSetObject(@[], LOGX_KEY_DELETE_QUEUE);
+    LOGXPrefsSynchronize();
+
     if (changed) {
         [LOGXEngine publishAssets];
         [LOGXVideoBackground invalidateConfigCache];

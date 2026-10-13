@@ -156,8 +156,12 @@ static NSString *const kActionCellIdentifier = @"LOGXActionCell";
     NSDictionary *asset = _assets[indexPath.row];
     NSString *name = [asset[@"name"] isKindOfClass:NSString.class] ? asset[@"name"] : nil;
     if (name.length == 0) return;
-    // 删除请求交给插件落地（设置端够不着真实目录）
-    LOGXPrefsSetObject(@YES, [NSString stringWithFormat:LOGX_KEY_DELETE_FMT, name]);
+    // 删除请求交给插件落地（设置端够不着真实目录）。
+    // 2.0.14：写入删除队列数组（插件端不能用 CFPreferencesCopyKeyList 遍历，会崩，改读队列）。
+    NSArray *existingQueue = LOGXPrefsObject(LOGX_KEY_DELETE_QUEUE);
+    NSMutableArray *queue = [existingQueue isKindOfClass:NSArray.class] ? [existingQueue mutableCopy] : [NSMutableArray array];
+    if (![queue containsObject:name]) [queue addObject:name];
+    LOGXPrefsSetObject(queue, LOGX_KEY_DELETE_QUEUE);
     LOGXPrefsSynchronize();
     notify_post(LOGX_NOTIFY_RELOAD);
     // 若删的正是当前选择，顺带清空路径

@@ -12,7 +12,7 @@
 #include <stdint.h>
 
 #define LOGX_PACKAGE_ID "com.loge.islandfx"
-#define LOGX_PLUGIN_VERSION_STRING @"2.0.13"
+#define LOGX_PLUGIN_VERSION_STRING @"2.0.14"
 
 /// 配置变更通知：设置端写入后投递，插件端立即重新评估（5 秒轮询之外的加速通道）
 #define LOGX_NOTIFY_RELOAD "com.loge.islandfx.reload"
@@ -42,6 +42,7 @@
 #define LOGX_KEY_PENDING_IMPORTS  @"Import.Pending"        // 待落地视频文件名队列
 #define LOGX_KEY_IMPORT_BLOB_FMT  @"Import.Blob.%@"
 #define LOGX_KEY_DELETE_FMT       @"Import.Delete.%@"
+#define LOGX_KEY_DELETE_QUEUE     @"Import.Delete.Queue"   // 待删除文件名队列（避免 CopyKeyList 遍历崩溃）
 #define LOGX_KEY_ASSETS_VIDEOS    @"Assets.Videos"         // 插件发布的素材清单
 #define LOGX_KEY_HEARTBEAT        @"Plugin.Heartbeat"      // 插件心跳（版本/pid/目录/暂停态）
 #define LOGX_KEY_RESUME_REQUEST   @"Plugin.ResumeRequest"  // 设置端请求恢复启用
