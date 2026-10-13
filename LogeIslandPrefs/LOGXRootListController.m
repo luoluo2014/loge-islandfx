@@ -7,6 +7,7 @@
 #import "LOGXRootListController.h"
 #import "LOGXVideoPickerController.h"
 #import "LOGXLogController.h"
+#import "LOGXStage.h"
 
 #import <notify.h>
 #import <spawn.h>
@@ -21,9 +22,11 @@
 @implementation LOGXRootListController
 
 - (NSArray *)specifiers {
+    LOGXStage("prefs-specifiers-enter");
     if (!self.cachedSpecifiers) {
         self.cachedSpecifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
     }
+    LOGXStage("prefs-specifiers-done");
     return self.cachedSpecifiers;
 }
 
@@ -32,11 +35,14 @@
 }
 
 - (void)viewDidLoad {
+    LOGXStage("prefs-viewDidLoad-enter");
     [super viewDidLoad];
     self.navigationController.navigationBar.tintColor = kLOGXColor;
+    LOGXStage("prefs-viewDidLoad-done");
 }
 
 - (void)viewWillAppear:(BOOL)animated {
+    LOGXStage("prefs-viewWillAppear-enter");
     [super viewWillAppear:animated];
     // MagmaEvo 同款：无分割线，靠分组卡片区分层次
     UITableView *table = self.tableView ?: self.view;
@@ -44,6 +50,7 @@
     // 视频行的「当前选择」可能在子页被改过，回来时刷新
     [self reloadSpecifierID:@"compactVideo" animated:NO];
     [self reloadSpecifierID:@"expandedVideo" animated:NO];
+    LOGXStage("prefs-viewWillAppear-done");
 }
 
 #pragma mark - 标准写入通道（开关/分段走这里）

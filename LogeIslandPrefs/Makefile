@@ -4,7 +4,7 @@ BUNDLE_NAME = LogeIslandPrefs
 # 保持 theos 默认（MH_DYLIB，filetype=6）：设备上能正常工作的 PreferenceBundle
 #（如 TrollOpenJBPrefs）就是 MH_DYLIB。2.0.10 改 MH_BUNDLE 是错误方向。
 LogeIslandPrefs_FILES = $(wildcard *.m CustomCells/*.m) \
-	../Shared/LOGXConfig.m ../Shared/LOGXPath.m ../Shared/LOGXLog.m
+	../Shared/LOGXConfig.m ../Shared/LOGXPath.m ../Shared/LOGXLog.m ../Shared/LOGXStage.m
 LogeIslandPrefs_INSTALL_PATH = /Library/PreferenceBundles
 LogeIslandPrefs_FRAMEWORKS = UIKit Foundation CoreGraphics QuartzCore PhotosUI
 LogeIslandPrefs_PRIVATE_FRAMEWORKS = Preferences

@@ -1,5 +1,6 @@
 #import "LOGXLog.h"
 #import "LOGXPath.h"
+#import "LOGXStage.h"
 #import <os/log.h>
 
 static const NSUInteger kLOGXDiagMaxBytes = 512 * 1024;
@@ -20,6 +21,7 @@ void LOGXDiag(NSString *format, ...) {
     });
     NSString *line = [NSString stringWithFormat:@"%@ %@\n", [NSDate date], message];
     dispatch_async(queue, ^{
+        LOGXStage("diag-write-enter");
         LOGXEnsureDataDirectories(nil);
         NSString *path = LOGXLogPath();
         NSFileManager *manager = NSFileManager.defaultManager;
@@ -49,5 +51,6 @@ void LOGXDiag(NSString *format, ...) {
         [handle seekToEndOfFile];
         [handle writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
         [handle closeFile];
+        LOGXStage("diag-write-exit");
     });
 }
