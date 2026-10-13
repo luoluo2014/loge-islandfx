@@ -7,7 +7,7 @@ LogeIslandPrefs_INSTALL_PATH = /Library/PreferenceBundles
 LogeIslandPrefs_FRAMEWORKS = UIKit Foundation CoreGraphics QuartzCore PhotosUI
 LogeIslandPrefs_PRIVATE_FRAMEWORKS = Preferences
 LogeIslandPrefs_CFLAGS = -fobjc-arc -Wall -I../Shared -I../LogeIslandFX -I. -I./CustomCells
-LogeIslandPrefs_LDFLAGS = -undefined dynamic_lookup
+LogeIslandPrefs_LDFLAGS = -undefined dynamic_lookup -F$(SYSROOT)/System/Library/PrivateFrameworks
 
 include $(THEOS_MAKE_PATH)/bundle.mk
 
