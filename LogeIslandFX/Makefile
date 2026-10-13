@@ -2,7 +2,7 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = LogeIslandFX
 LogeIslandFX_FILES = LogeIslandFX.xm LOGXVideoBackground.m \
-	../Shared/LOGXConfig.m ../Shared/LOGXPath.m ../Shared/LOGXLog.m
+	../Shared/LOGXConfig.m ../Shared/LOGXPath.m ../Shared/LOGXLog.m ../Shared/LOGXStage.m
 # -fno-ptrauth-objc-class-ro：关闭 class_ro_t 指针签名，与设备上能正常工作的
 # 插件保持一致（2.0.11 修复，详见 LogeIslandPrefs/Makefile 注释）。
 # -undefined dynamic_lookup 已移除：它会触发 ld64 禁用 chained fixups

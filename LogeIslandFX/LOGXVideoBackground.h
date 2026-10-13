@@ -11,9 +11,6 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-/// 崩溃定位打点（定义在 LogeIslandFX.xm）：同步写 stage.log，定位崩在哪一步。
-void LOGXStage(const char *stage);
-
 @interface LOGXVideoBackground : NSObject
 
 /// 对所有已知 surface 触发一次重评（配置变更/hook 事件时调用）

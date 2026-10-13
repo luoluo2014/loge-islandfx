@@ -18,6 +18,7 @@
 #import "LOGXConfig.h"
 #import "LOGXConstants.h"
 #import "LOGXLog.h"
+#import "LOGXStage.h"
 #import "LOGXPath.h"
 
 #import <AVFoundation/AVFoundation.h>

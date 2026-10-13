@@ -45,6 +45,7 @@
 #import "LOGXConstants.h"
 #import "LOGXLog.h"
 #import "LOGXPath.h"
+#import "LOGXStage.h"
 #import "LOGXVideoBackground.h"
 
 #if __has_include(<substrate.h>)
@@ -518,35 +519,6 @@ static void LOGXEvaluateBootGuard(void) {
 @end
 
 #pragma mark - 模块入口
-
-/// 崩溃定位打点（2.0.12）：POSIX open/write/fsync 同步写，立即落盘。
-/// 设备没有 CrashReporter 日志，靠这个文件（stage.log）的最后一行定位崩在哪一步。
-/// 写失败一律吞掉——打点本身绝不能成为新的崩溃源。
-void LOGXStage(const char *stage) {
-    @autoreleasepool {
-        @try {
-            NSString *dir = LOGXDataDirectory();
-            [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
-            NSString *path = [dir stringByAppendingPathComponent:@"stage.log"];
-            const char *cpath = path.fileSystemRepresentation;
-            int fd = open(cpath, O_WRONLY | O_CREAT | O_APPEND, 0644);
-            if (fd >= 0) {
-                char buf[640];
-                time_t t = time(NULL);
-                struct tm tmv;
-                localtime_r(&t, &tmv);
-                int n = snprintf(buf, sizeof(buf), "%02d:%02d:%02d %s pid=%d\n",
-                                 tmv.tm_hour, tmv.tm_min, tmv.tm_sec, stage, (int)getpid());
-                if (n > 0) {
-                    (void)write(fd, buf, (size_t)n);
-                    (void)fsync(fd);
-                }
-                close(fd);
-            }
-        } @catch (NSException *e) {
-        }
-    }
-}
 
 static void LOGXStartEngineDelayed(void) {
     // 延后 5 秒：等 SpringBoard 完成启动流程再开始写 CFPreferences / 装 hook。
