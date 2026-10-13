@@ -47,9 +47,8 @@
     // MagmaEvo 同款：无分割线，靠分组卡片区分层次
     UITableView *table = self.tableView ?: self.view;
     table.separatorStyle = UITableViewCellSeparatorStyleNone;
-    // 视频行的「当前选择」可能在子页被改过，回来时刷新
-    [self reloadSpecifierID:@"compactVideo" animated:NO];
-    [self reloadSpecifierID:@"expandedVideo" animated:NO];
+    // 注意：不调用 reloadSpecifierID:（它在 iOS 17.1 上会崩，stage.log 定位到
+    // viewWillAppear 内崩溃）。视频行的「当前选择」刷新改由重进页面时重新加载。
     LOGXStage("prefs-viewWillAppear-done");
 }
 

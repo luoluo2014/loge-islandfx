@@ -12,7 +12,7 @@
 #include <stdint.h>
 
 #define LOGX_PACKAGE_ID "com.loge.islandfx"
-#define LOGX_PLUGIN_VERSION_STRING @"2.0.15"
+#define LOGX_PLUGIN_VERSION_STRING @"2.0.16"
 
 /// 配置变更通知：设置端写入后投递，插件端立即重新评估（5 秒轮询之外的加速通道）
 #define LOGX_NOTIFY_RELOAD "com.loge.islandfx.reload"
