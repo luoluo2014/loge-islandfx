@@ -14,6 +14,13 @@
 
 @implementation LOGXSegmentCell
 
+// 2.0.21：分段切换打点。UISegmentedControl 的 valueChanged 经 controlChanged: 汇入。
+- (void)controlChanged:(UIControl *)control {
+    LOGXStage("cell-segment-controlChanged");
+    [super controlChanged:control];
+    LOGXStage("cell-segment-controlChanged-ok");
+}
+
 - (instancetype)initWithStyle:(UITableViewCellStyle)style
              reuseIdentifier:(NSString *)reuseIdentifier
                   specifier:(PSSpecifier *)specifier {

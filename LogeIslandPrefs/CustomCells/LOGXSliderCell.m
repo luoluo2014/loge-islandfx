@@ -109,7 +109,11 @@
 }
 
 - (void)sliderReleased:(UISlider *)sender {
+    // 2.0.21：滑杆松手打点。拖动中只更新本地数值显示，松手才写 CFPreferences。
+    // 「滑杆拖不动」与「拖了不生效」靠这一行 + prefs-set-enter 区分。
+    LOGXStage("cell-slider-released");
     [self.specifier performSetterWithValue:@(sender.value)];
+    LOGXStage("cell-slider-released-ok");
 }
 
 - (void)prepareForReuse {

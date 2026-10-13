@@ -495,33 +495,59 @@ static void LOGXEvaluateBootGuard(void) {
     LOGXPrefsSynchronize();
 }
 
-/// 发布诊断日志尾部（最多 64KB）给设置端展示
+/// 发布诊断日志尾部（最多 64KB）给设置端展示。
+/// 2.0.21 起同时发布 stage.log：该文件由插件端与设置端共用（stage.log 里两类
+/// 打点混排即为证据），内含全部阶段打点（prefs-* / ds-rows-* / cell-*-init /
+/// engine-*），是定位设置端问题的唯一实证来源。此前只发 video-diag.log，
+/// 用户出问题时拿不到 stage.log，只能干等。
 + (void)publishLogTail {
-    static NSUInteger lastPublishedSize = 0;
+    static NSUInteger lastDiagSize = 0;
+    static NSUInteger lastStageSize = 0;
+
+    NSString *stageTail = @"";
+    NSString *stagePath = LOGXStageLogPath();
+    NSFileHandle *stageHandle = [NSFileHandle fileHandleForReadingAtPath:stagePath];
+    NSUInteger stageSize = 0;
+    if (stageHandle != NULL) {
+        NSDictionary *attributes = [NSFileManager.defaultManager attributesOfItemAtPath:stagePath error:nil];
+        stageSize = [attributes[NSFileSize] unsignedIntegerValue];
+        const NSUInteger kMaxStageTail = 6 * 1024;
+        if (stageSize > kMaxStageTail) [stageHandle seekToFileOffset:stageSize - kMaxStageTail];
+        NSData *stageData = [stageHandle readDataToEndOfFile];
+        [stageHandle closeFile];
+        stageTail = [[NSString alloc] initWithData:stageData encoding:NSUTF8StringEncoding] ?: @"";
+    }
+
+    NSString *diagTail = @"";
     NSFileHandle *handle = [NSFileHandle fileHandleForReadingAtPath:LOGXLogPath()];
-    if (handle == NULL) {
-        if (lastPublishedSize != 0) {
-            lastPublishedSize = 0;
-            LOGXPrefsSetObject(@"", LOGX_KEY_LOG_TAIL);
-            LOGXPrefsSetObject(@0, LOGX_KEY_LOG_SIZE);
-            LOGXPrefsSynchronize();
-        }
-        return;
-    }
-    NSDictionary *attributes = [NSFileManager.defaultManager attributesOfItemAtPath:LOGXLogPath() error:nil];
-    NSUInteger size = [attributes[NSFileSize] unsignedIntegerValue];
-    if (size == lastPublishedSize) {
+    NSUInteger diagSize = 0;
+    if (handle != NULL) {
+        NSDictionary *attributes = [NSFileManager.defaultManager attributesOfItemAtPath:LOGXLogPath() error:nil];
+        diagSize = [attributes[NSFileSize] unsignedIntegerValue];
+        const NSUInteger kMaxTail = 4 * 1024;   // 只发布末尾 4KB（大字符串写 CFPreferences 在 SpringBoard 里风险高）
+        if (diagSize > kMaxTail) [handle seekToFileOffset:diagSize - kMaxTail];
+        NSData *tail = [handle readDataToEndOfFile];
         [handle closeFile];
+        diagTail = [[NSString alloc] initWithData:tail encoding:NSUTF8StringEncoding] ?: @"";
+    }
+
+    if (diagSize == lastDiagSize && stageSize == lastStageSize) return;
+    lastDiagSize = diagSize;
+    lastStageSize = stageSize;
+
+    if (stageTail.length == 0 && diagTail.length == 0) {
+        LOGXPrefsSetObject(@"", LOGX_KEY_LOG_TAIL);
+        LOGXPrefsSetObject(@0, LOGX_KEY_LOG_SIZE);
+        LOGXPrefsSynchronize();
         return;
     }
-    const NSUInteger kMaxTail = 4 * 1024;   // 只发布末尾 4KB（原 64KB 大字符串写 CFPreferences 在 SpringBoard 里风险高）
-    if (size > kMaxTail) [handle seekToFileOffset:size - kMaxTail];
-    NSData *tail = [handle readDataToEndOfFile];
-    [handle closeFile];
-    lastPublishedSize = size;
-    NSString *text = [[NSString alloc] initWithData:tail encoding:NSUTF8StringEncoding] ?: @"";
+
+    NSString *text = [NSString stringWithFormat:
+                      @"===== stage.log（阶段打点：设置端+插件端共用）=====\n%@"
+                      @"\n===== video-diag.log（插件端运行日志）=====\n%@",
+                      stageTail, diagTail];
     LOGXPrefsSetObject(text, LOGX_KEY_LOG_TAIL);
-    LOGXPrefsSetObject(@(size), LOGX_KEY_LOG_SIZE);
+    LOGXPrefsSetObject(@(stageSize + diagSize), LOGX_KEY_LOG_SIZE);
     LOGXPrefsSynchronize();
 }
 

@@ -21,6 +21,8 @@ NSString *LOGXDataDirectory(void);
 NSString *LOGXVideosDirectory(void);
 /// 诊断日志
 NSString *LOGXLogPath(void);
+/// 阶段打点日志（stage.log：tweak 与设置端共用，靠最后一行定位崩溃点）
+NSString *LOGXStageLogPath(void);
 /// 崩溃循环保护状态文件
 NSString *LOGXBootStatePath(void);
 /// 真实 /var/jb 视频目录（供 Filza 打开/展示，插件端与 Filza 视角一致）

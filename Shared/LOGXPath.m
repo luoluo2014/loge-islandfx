@@ -13,6 +13,10 @@ NSString *LOGXLogPath(void) {
     return [LOGXDataDirectory() stringByAppendingPathComponent:@"Logs/video-diag.log"];
 }
 
+NSString *LOGXStageLogPath(void) {
+    return [LOGXDataDirectory() stringByAppendingPathComponent:@"stage.log"];
+}
+
 NSString *LOGXBootStatePath(void) {
     return [LOGXDataDirectory() stringByAppendingPathComponent:@"boot-state.plist"];
 }

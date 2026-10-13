@@ -39,7 +39,7 @@
 
 - (void)viewDidLoad {
     LOGXStage("prefs-viewDidLoad-enter");
-    LOGXStage("prefs-build-2020");   // 确认设备上跑的是哪一版
+    LOGXStage("prefs-build-2021");   // 确认设备上跑的是哪一版
     [super viewDidLoad];
     self.navigationController.navigationBar.tintColor = kLOGXColor;
     // 无分割线：insetGrouped 靠分组卡片区分层次。
@@ -112,46 +112,65 @@
 #pragma mark - 标准写入通道（开关/分段走这里）
 
 - (void)setPreferenceValue:(id)value specifier:(PSSpecifier *)specifier {
+    // 2.0.21：写入通道打点。开关/分段的 control 事件最终都汇到这里，
+    // 若反馈「调不动」，这一行在不在 stage.log 里直接区分是 control 没触发，
+    // 还是写入了但没生效。
+    char buf[96];
+    snprintf(buf, sizeof(buf), "prefs-set-enter id=%s", specifier.identifier ? specifier.identifier.UTF8String : "?");
+    LOGXStage(buf);
     [super setPreferenceValue:value specifier:specifier];
     // 通知插件端立即重评（5 秒轮询之外的加速通道）
     notify_post(LOGX_NOTIFY_RELOAD);
+    LOGXStage("prefs-set-exit");
 }
 
 #pragma mark - 行点击
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    LOGXStage("prefs-didSelect-enter");
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
     PSSpecifier *specifier = [self specifierAtIndexPath:indexPath];
     NSString *identifier = specifier.identifier;
     if ([identifier isEqualToString:@"compactVideo"] || [identifier isEqualToString:@"expandedVideo"]) {
+        LOGXStage("prefs-didSelect-video");
         NSString *modeKey = [identifier isEqualToString:@"compactVideo"] ? @"Compact.Path" : @"Expanded.Path";
         LOGXVideoPickerController *picker = [[LOGXVideoPickerController alloc] initWithModeKey:modeKey];
         [self.navigationController pushViewController:picker animated:YES];
     } else if ([identifier isEqualToString:@"logPage"]) {
+        LOGXStage("prefs-didSelect-log");
         // 自己 push 而不是走 isController+detail：LOGXLogController 是
         // UITableViewController，不是 PSViewController 子类，走 detail 会被
         // PSListController 调 setSpecifier: 等私有方法而崩（2.0.19 修复）。
         LOGXLogController *logPage = [[LOGXLogController alloc] init];
         [self.navigationController pushViewController:logPage animated:YES];
-    } else if (specifier.target != nil && specifier->action != NULL) {
-        // 本方法覆盖了 PSListController 的 didSelectRow，不手动转发的话
-        // PSButtonCell 的 action（如「注销重启」）不会触发。
-        // 注意：PSSpecifier.action 是 @public ivar（vendor 头文件里不是 property）
+    } else if (specifier->action != NULL) {
+        // 覆盖了父类 didSelectRow，不转发则 PSButtonCell 的 action（注销重启）不触发。
+        // 2.0.21：target 为 nil 时回退 self——Root.plist 的注销按钮没写 target，
+        // 依赖 loadSpecifiersFromPlistName:target: 隐式填充；一旦没填上，旧写法的
+        // specifier.target != nil 判断会直接跳过转发，表现为「注销没效果」。
+        // PSSpecifier.action 是 @public ivar 不是 property，必须 -> 访问。
+        id target = specifier.target ?: self;
+        LOGXStage("prefs-didSelect-forward");
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        [specifier.target performSelector:specifier->action withObject:specifier];
+        [target performSelector:specifier->action withObject:specifier];
 #pragma clang diagnostic pop
+        LOGXStage("prefs-didSelect-forward-ok");
+    } else {
+        LOGXStage("prefs-didSelect-noaction");
     }
 }
 
 #pragma mark - 注销重启
 
 - (void)respringTapped:(PSSpecifier *)specifier {
+    LOGXStage("prefs-respring-enter");
     UIAlertController *confirm = [UIAlertController alertControllerWithTitle:@"注销重启"
                                                                     message:@"将重载 SpringBoard 使改动完全生效。继续吗？"
                                                              preferredStyle:UIAlertControllerStyleAlert];
     __weak typeof(self) weakSelf = self;
     [confirm addAction:[UIAlertAction actionWithTitle:@"继续" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+        LOGXStage("prefs-respring-confirmed");
         [weakSelf performRespring];
     }]];
     [confirm addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
@@ -159,6 +178,7 @@
 }
 
 - (void)performRespring {
+    LOGXStage("prefs-performRespring-enter");
     [self.view endEditing:YES];
 
     // 1) 立刻让插件停止全部渲染：黑屏恢复期间不残留任何视频帧
@@ -168,6 +188,7 @@
     //    避免把正常重启误判成异常循环而暂停（2.0.0 的误判源）
     LOGXPrefsSetObject(@YES, LOGX_KEY_INTENTIONAL_RESPRING);
     LOGXPrefsSynchronize();
+    LOGXStage("prefs-performRespring-prefs-ok");
 
     // 3) 稍等 0.3 秒让 cfprefsd 完成代写，再执行重启；
     //    用 dispatch_after 而不是 usleep，避免阻塞 UI 线程
@@ -180,14 +201,20 @@
         // root 运行时无此问题，1.4.x 安装 respring 一直正常）。
         const char *killArgs[] = {"-9", "SpringBoard", NULL};
         int status = posix_spawn(&pid, "/usr/bin/killall", NULL, NULL, (char *const *)killArgs, NULL);
+        LOGXStage(status == 0 ? "prefs-respring-killall-spawned" : "prefs-respring-killall-FAILED");
         if (status == 0) {
             int waitStatus = 0;
             waitpid(pid, &waitStatus, 0);   // killall 毫秒级返回，不会拖住 UI
-            if (WIFEXITED(waitStatus) && WEXITSTATUS(waitStatus) == 0) return;
+            if (WIFEXITED(waitStatus) && WEXITSTATUS(waitStatus) == 0) {
+                LOGXStage("prefs-respring-killall-ok");
+                return;
+            }
+            LOGXStage("prefs-respring-killall-nonzero");
         }
         // 备选：sbreload（RootHide 官方重启，root 环境验证可用）
         const char *args[] = {"sbreload", NULL};
-        posix_spawn(&pid, "/usr/bin/sbreload", NULL, NULL, (char *const *)args, NULL);
+        int st2 = posix_spawn(&pid, "/usr/bin/sbreload", NULL, NULL, (char *const *)args, NULL);
+        LOGXStage(st2 == 0 ? "prefs-respring-sbreload-spawned" : "prefs-respring-sbreload-FAILED");
     });
 }
 
