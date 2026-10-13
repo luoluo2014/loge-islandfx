@@ -37,6 +37,9 @@
 #import <notify.h>
 #import <mach-o/dyld.h>
 #import <unistd.h>
+#import <fcntl.h>
+#import <sys/stat.h>
+#import <time.h>
 
 #import "LOGXConfig.h"
 #import "LOGXConstants.h"
@@ -161,22 +164,30 @@ static void LOGXTryInstallHooks(BOOL logResult) {
         if (logResult) LOGXDiag(@"_SPIslandRenderSurface 类不存在，稍后重试");
         return;
     }
+    LOGXStage("hooks-surface-class-ok");
     BOOL any = NO;
     any |= LOGXInstallInstanceHook(surfaceClass, @selector(_sp_set_render_visible:),
                                    (IMP)LOGXHook_surface_setRenderVisible, &LOGXOrig_surface_setRenderVisible);
+    LOGXStage("hooks-visible");
     any |= LOGXInstallInstanceHook(surfaceClass, @selector(_sp_display_tick:),
                                    (IMP)LOGXHook_surface_displayTick, &LOGXOrig_surface_displayTick);
+    LOGXStage("hooks-tick");
     any |= LOGXInstallInstanceHook(surfaceClass, @selector(setLastPresentationRadius:),
                                    (IMP)LOGXHook_surface_setRadius, &LOGXOrig_surface_setRadius);
+    LOGXStage("hooks-radius");
     any |= LOGXInstallInstanceHook(surfaceClass, @selector(setLastPresentationSize:),
                                    (IMP)LOGXHook_surface_setSize, &LOGXOrig_surface_setSize);
+    LOGXStage("hooks-size");
     any |= LOGXInstallInstanceHook(surfaceClass, @selector(layoutSubviews),
                                    (IMP)LOGXHook_surface_layoutSubviews, &LOGXOrig_surface_layoutSubviews);
+    LOGXStage("hooks-layout");
 
     Class containerClass = objc_getClass(kLOGXContainerClassName.UTF8String);
     if (containerClass != NULL) {
+        LOGXStage("hooks-container-class-ok");
         any |= LOGXInstallInstanceHook(containerClass, @selector(layoutSubviews),
                                        (IMP)LOGXHook_container_layoutSubviews, &LOGXOrig_container_layoutSubviews);
+        LOGXStage("hooks-container");
     }
 
     if (any) {
@@ -508,30 +519,76 @@ static void LOGXEvaluateBootGuard(void) {
 
 #pragma mark - 模块入口
 
+/// 崩溃定位打点（2.0.12）：POSIX open/write/fsync 同步写，立即落盘。
+/// 设备没有 CrashReporter 日志，靠这个文件（stage.log）的最后一行定位崩在哪一步。
+/// 写失败一律吞掉——打点本身绝不能成为新的崩溃源。
+void LOGXStage(const char *stage) {
+    @autoreleasepool {
+        @try {
+            NSString *dir = LOGXDataDirectory();
+            [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
+            NSString *path = [dir stringByAppendingPathComponent:@"stage.log"];
+            const char *cpath = path.fileSystemRepresentation;
+            int fd = open(cpath, O_WRONLY | O_CREAT | O_APPEND, 0644);
+            if (fd >= 0) {
+                char buf[640];
+                time_t t = time(NULL);
+                struct tm tmv;
+                localtime_r(&t, &tmv);
+                int n = snprintf(buf, sizeof(buf), "%02d:%02d:%02d %s pid=%d\n",
+                                 tmv.tm_hour, tmv.tm_min, tmv.tm_sec, stage, (int)getpid());
+                if (n > 0) {
+                    (void)write(fd, buf, (size_t)n);
+                    (void)fsync(fd);
+                }
+                close(fd);
+            }
+        } @catch (NSException *e) {
+        }
+    }
+}
+
 static void LOGXStartEngineDelayed(void) {
     // 延后 5 秒：等 SpringBoard 完成启动流程再开始写 CFPreferences / 装 hook。
     // 构造期写跨进程偏好被怀疑是早前「黑屏卡死」的诱因之一，重做后彻底避开。
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        LOGXStage("engine-callback-enter");
         if (LOGXSuspended) {
+            LOGXStage("engine-suspended-branch");
             LOGXDiag(@"插件处于暂停态：不安装 hook、不播放，仅等待设置端恢复");
             [LOGXEngine start];   // 引擎仍运行，以便处理恢复请求并发布暂停态心跳
+            LOGXStage("engine-suspended-started");
             return;
         }
+        LOGXStage("engine-log-version");
         LOGXDiag(@"灵动岛背景视频模块启动（v%s）", LOGX_PLUGIN_VERSION_STRING.UTF8String);
+        LOGXStage("engine-try-hooks");
         LOGXTryInstallHooks(YES);
+        LOGXStage("engine-hooks-done");
         _dyld_register_func_for_add_image(LOGXDyldImageCallback);
+        LOGXStage("engine-dyldcb-registered");
         LOGXScheduleHookRetry();
+        LOGXStage("engine-retry-scheduled");
         LOGXRegisterSystemNotifications();
+        LOGXStage("engine-notif-registered");
         [LOGXEngine start];
+        LOGXStage("engine-started");
     });
 }
 
 %ctor {
+    LOGXStage("ctor-enter");
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
+        LOGXStage("ctor-once-enter");
         LOGXEnsureDataDirectories(nil);
+        LOGXStage("ctor-dirs-ok");
         LOGXEvaluateBootGuard();
+        LOGXStage("ctor-bootguard-ok");
         LOGXDiag(@"dylib 已注入 SpringBoard（pid %d，暂停=%d）", getpid(), LOGXSuspended);
+        LOGXStage("ctor-diag-ok");
         LOGXStartEngineDelayed();
+        LOGXStage("ctor-engine-scheduled");
     });
+    LOGXStage("ctor-exit");
 }

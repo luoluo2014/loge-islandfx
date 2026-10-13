@@ -104,12 +104,14 @@ static NSTimeInterval s_configSnapshotAt = 0;
 }
 
 + (void)triggerAll:(NSString *)reason {
+    LOGXStage("video-trigger-all-enter");
     for (id surface in [_LOGXKnownSurfaces() copy]) {
         if (LOGXSurfaceClass() == Nil || ![surface isKindOfClass:LOGXSurfaceClass()]) continue;
         @autoreleasepool {
             [[LOGXVideoBackground backgroundForSurface:surface] handleTrigger:reason];
         }
     }
+    LOGXStage("video-trigger-all-exit");
 }
 
 + (void)stopAll {
@@ -317,11 +319,13 @@ static Ivar LOGXFindIvar(Class cls, const char *name) {
 
 - (void)handleTrigger:(NSString *)reason {
     if (self.surface == NULL) return;
+    LOGXStage("video-handle-trigger");
     if (reason.length > 0) {
         [self diag:[NSString stringWithFormat:@"触发[%@] surface=%p bounds=%@", reason, self.surface, NSStringFromCGRect(self.surface.bounds)]];
     }
     if (self.layer != NULL) [self updateGeometry];
     [self syncIfNeeded];
+    LOGXStage("video-handle-trigger-done");
 }
 
 - (void)syncIfNeeded {
@@ -333,6 +337,7 @@ static Ivar LOGXFindIvar(Class cls, const char *name) {
 
     NSString *reason = nil;
     NSString *path = [self resolvedTargetPath:&reason];
+    LOGXStage(path != nil ? "video-sync-path-ok" : "video-sync-no-path");
 
     if (path == nil) {
         if (self.player != NULL) {
@@ -355,6 +360,7 @@ static Ivar LOGXFindIvar(Class cls, const char *name) {
     }
 
     AVPlayerLayer *layer = [self attachPlayerLayer];
+    LOGXStage("video-sync-layer-attached");
     if (layer == NULL) {
         self.needsSync = YES;
         self.lastEvaluation = now - kLOGXVideoEvalInterval;
@@ -363,15 +369,19 @@ static Ivar LOGXFindIvar(Class cls, const char *name) {
 
     [self stop];
 
+    LOGXStage("video-sync-create-item");
     AVPlayerItem *item = [AVPlayerItem playerItemWithURL:[NSURL fileURLWithPath:path]];
     self.player = [AVQueuePlayer queuePlayerWithItems:@[item]];
+    LOGXStage("video-sync-player-created");
     self.player.muted = YES;
     self.looper = [AVPlayerLooper playerLooperWithPlayer:self.player templateItem:item];
+    LOGXStage("video-sync-looper-created");
     layer.player = self.player;
     layer.hidden = NO;
     [self updateGeometry];
     self.loadedPath = path;
     [self.player play];
+    LOGXStage("video-sync-play-started");
 
     [self diagNow:[NSString stringWithFormat:@"视频背景已挂载[%@]：%@ frame=%@ radius=%.1f gravity=%ld",
                    self.activePrefix, path.lastPathComponent, NSStringFromCGRect(layer.frame),
