@@ -4,6 +4,7 @@
 //
 
 #import "LOGXBrand.h"
+#import "LOGXStage.h"
 
 @interface PSSegmentTableCell : PSControlTableCell
 @end
@@ -16,6 +17,7 @@
 - (instancetype)initWithStyle:(UITableViewCellStyle)style
              reuseIdentifier:(NSString *)reuseIdentifier
                   specifier:(PSSpecifier *)specifier {
+    LOGXStage("cell-segment-init-enter");
     self = [super initWithStyle:UITableViewCellStyleDefault reuseIdentifier:reuseIdentifier specifier:specifier];
     if (self) {
         UISegmentedControl *segment = (UISegmentedControl *)self.control;
@@ -27,6 +29,7 @@
         self.textLabel.font = [UIFont systemFontOfSize:16.0 weight:UIFontWeightRegular];
         self.selectionStyle = UITableViewCellSelectionStyleNone;
     }
+    LOGXStage("cell-segment-init-done");
     return self;
 }
 

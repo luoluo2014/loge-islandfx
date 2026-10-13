@@ -4,6 +4,7 @@
 //
 
 #import "LOGXBrand.h"
+#import "LOGXStage.h"
 
 @interface LOGXVideoCell : PSTableCell
 @end
@@ -13,6 +14,7 @@
 - (instancetype)initWithStyle:(UITableViewCellStyle)style
              reuseIdentifier:(NSString *)reuseIdentifier
                   specifier:(PSSpecifier *)specifier {
+    LOGXStage("cell-video-init-enter");
     self = [super initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:reuseIdentifier specifier:specifier];
     if (!self) return nil;
     self.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
@@ -20,6 +22,7 @@
     self.detailTextLabel.font = [UIFont systemFontOfSize:13.0 weight:UIFontWeightRegular];
     self.detailTextLabel.lineBreakMode = NSLineBreakByTruncatingMiddle;
     [self refreshCellContentsWithSpecifier:specifier];
+    LOGXStage("cell-video-init-done");
     return self;
 }
 

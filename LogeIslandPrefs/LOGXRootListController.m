@@ -21,10 +21,13 @@
 - (NSArray *)specifiers {
     LOGXStage("prefs-specifiers-enter");
     // 标准做法：直接用 PSListController 公开的 _specifiers（其内部 viewWillAppear 等
-    // 直接访问这个 ivar，绕开会拿到 nil 崩溃——2.0.16 之前用 cachedSpecifiers 正是
-    // 崩溃根因）。_specifiers 符号在 Preferences.tbd 里导出（PSListController._specifiers）。
+    // 直接访问这个 ivar，绕开会拿到 nil 崩溃）。_specifiers 符号在 Preferences.tbd
+    // 里导出（PSListController._specifiers）。
     if (!_specifiers) {
         _specifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
+        char buf[64];
+        snprintf(buf, sizeof(buf), "prefs-spec-count=%lu", (unsigned long)_specifiers.count);
+        LOGXStage(buf);
     }
     LOGXStage("prefs-specifiers-done");
     return _specifiers;
@@ -36,6 +39,7 @@
 
 - (void)viewDidLoad {
     LOGXStage("prefs-viewDidLoad-enter");
+    LOGXStage("prefs-build-2018");   // 确认设备上跑的是哪一版
     [super viewDidLoad];
     self.navigationController.navigationBar.tintColor = kLOGXColor;
     LOGXStage("prefs-viewDidLoad-done");
@@ -43,13 +47,36 @@
 
 - (void)viewWillAppear:(BOOL)animated {
     LOGXStage("prefs-viewWillAppear-enter");
-    [super viewWillAppear:animated];
+    // 2.0.18 诊断：@try/@catch 包住 super。若崩溃是 ObjC 异常（如 unrecognized
+    // selector），这里能兜住并记录；若是 EXC_BAD_ACCESS 则打点链继续定位。
+    @try {
+        [super viewWillAppear:animated];
+        LOGXStage("prefs-vwa-super-ok");
+    } @catch (NSException *exception) {
+        LOGXStage("prefs-vwa-super-catch");
+    }
     // MagmaEvo 同款：无分割线，靠分组卡片区分层次
     UITableView *table = self.tableView ?: self.view;
     table.separatorStyle = UITableViewCellSeparatorStyleNone;
-    // 注意：不调用 reloadSpecifierID:（它在 iOS 17.1 上会崩，stage.log 定位到
-    // viewWillAppear 内崩溃）。视频行的「当前选择」刷新改由重进页面时重新加载。
     LOGXStage("prefs-viewWillAppear-done");
+}
+
+#pragma mark - 2.0.18 诊断探针：表格填充链路打点
+// PSListController 自身实现这些数据源方法；加 enter/exit 打点后，stage.log 能
+// 精确指出崩溃发生在：取行数 → cellForRow → 某个自定义 cell 的 init 哪一步。
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    LOGXStage("ds-rows-enter");
+    NSInteger rows = [super tableView:tableView numberOfRowsInSection:section];
+    LOGXStage("ds-rows-exit");
+    return rows;
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    LOGXStage("ds-cell-enter");
+    UITableViewCell *cell = [super tableView:tableView cellForRowAtIndexPath:indexPath];
+    LOGXStage("ds-cell-exit");
+    return cell;
 }
 
 #pragma mark - 标准写入通道（开关/分段走这里）

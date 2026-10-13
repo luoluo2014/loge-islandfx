@@ -6,6 +6,7 @@
 //
 
 #import "LOGXBrand.h"
+#import "LOGXStage.h"
 
 @interface LOGXSliderCell : PSTableCell
 @property (nonatomic, strong) UISlider *slider;
@@ -21,6 +22,7 @@
 - (instancetype)initWithStyle:(UITableViewCellStyle)style
              reuseIdentifier:(NSString *)reuseIdentifier
                   specifier:(PSSpecifier *)specifier {
+    LOGXStage("cell-slider-init-enter");
     self = [super initWithStyle:UITableViewCellStyleDefault reuseIdentifier:reuseIdentifier specifier:specifier];
     if (!self) return nil;
     self.selectionStyle = UITableViewCellSelectionStyleNone;
@@ -82,6 +84,7 @@
     ]];
 
     [self refreshCellContentsWithSpecifier:specifier];
+    LOGXStage("cell-slider-init-done");
     return self;
 }
 

@@ -5,6 +5,7 @@
 //
 
 #import "LOGXBrand.h"
+#import "LOGXStage.h"
 #import <notify.h>
 
 @interface LOGXHeaderCell : PSTableCell
@@ -19,6 +20,7 @@
 - (instancetype)initWithStyle:(UITableViewCellStyle)style
              reuseIdentifier:(NSString *)reuseIdentifier
                   specifier:(PSSpecifier *)specifier {
+    LOGXStage("cell-header-init-enter");
     self = [super initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil specifier:specifier];
     if (!self) return nil;
     self.selectionStyle = UITableViewCellSelectionStyleNone;
@@ -120,6 +122,7 @@
     notify_register_dispatch(LOGX_NOTIFY_RELOAD, &_reloadToken, dispatch_get_main_queue(), ^(__unused int token) {
         dispatch_async(dispatch_get_main_queue(), ^{ [self refreshStatus]; });
     });
+    LOGXStage("cell-header-init-done");
     return self;
 }
 
@@ -128,6 +131,7 @@
 }
 
 - (void)refreshStatus {
+    LOGXStage("hdr-refresh-enter");
     NSDictionary *heartbeat = LOGXPrefsObject(LOGX_KEY_HEARTBEAT);
     NSArray *assets = LOGXPrefsObject(LOGX_KEY_ASSETS_VIDEOS);
     NSUInteger videoCount = [assets isKindOfClass:NSArray.class] ? ((NSArray *)assets).count : 0;

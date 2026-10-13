@@ -6,6 +6,7 @@
 
 #import "LOGXBrand.h"
 #import "LOGXLogController.h"
+#import "LOGXStage.h"
 
 #import <notify.h>
 
@@ -20,6 +21,13 @@ static NSString *const kLogCellID = @"LOGXLogCell";
 @end
 
 @implementation LOGXLogController
+
+- (instancetype)init {
+    LOGXStage("logctrl-init-enter");
+    self = [super init];
+    LOGXStage("logctrl-init-done");
+    return self;
+}
 
 - (void)dealloc {
     if (_reloadToken >= 0) notify_cancel(_reloadToken);
