@@ -14,20 +14,20 @@
 #import <sys/wait.h>
 
 @interface LOGXRootListController ()
-// 不用 PSListController 的 _specifiers ivar（arm64e 下该 ivar 符号不导出，
-// 正常链接时 dyld 找不到会导致 bundle dlopen 失败），改用自有缓存属性。
-@property (nonatomic, strong) NSArray *cachedSpecifiers;
 @end
 
 @implementation LOGXRootListController
 
 - (NSArray *)specifiers {
     LOGXStage("prefs-specifiers-enter");
-    if (!self.cachedSpecifiers) {
-        self.cachedSpecifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
+    // 标准做法：直接用 PSListController 公开的 _specifiers（其内部 viewWillAppear 等
+    // 直接访问这个 ivar，绕开会拿到 nil 崩溃——2.0.16 之前用 cachedSpecifiers 正是
+    // 崩溃根因）。_specifiers 符号在 Preferences.tbd 里导出（PSListController._specifiers）。
+    if (!_specifiers) {
+        _specifiers = [self loadSpecifiersFromPlistName:@"Root" target:self];
     }
     LOGXStage("prefs-specifiers-done");
-    return self.cachedSpecifiers;
+    return _specifiers;
 }
 
 - (UITableViewStyle)tableViewStyle {
