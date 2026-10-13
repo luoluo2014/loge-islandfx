@@ -336,15 +336,24 @@ static void LOGXEvaluateBootGuard(void) {
         [LOGXEngine publishHeartbeat];
         return;
     }
+    LOGXStage("tick-consume");
     [LOGXEngine consumePendingImports];
+    LOGXStage("tick-delete");
     [LOGXEngine processDeleteRequests];
+    LOGXStage("tick-resume");
     [LOGXEngine processResumeRequest];
+    LOGXStage("tick-clearlog");
     [LOGXEngine processClearLogRequest];
+    LOGXStage("tick-assets");
     [LOGXEngine publishAssets];
+    LOGXStage("tick-heartbeat");
     [LOGXEngine publishHeartbeat];
+    LOGXStage("tick-logtail");
     [LOGXEngine publishLogTail];
+    LOGXStage("tick-notify");
     // 通知设置端刷新（引擎发布的素材清单/心跳/日志有了新值）
     notify_post(LOGX_NOTIFY_RELOAD);
+    LOGXStage("tick-done");
 }
 
 /// 消费设置端暂存的待导入视频，落入插件可读的真实目录
@@ -505,7 +514,7 @@ static void LOGXEvaluateBootGuard(void) {
         [handle closeFile];
         return;
     }
-    const NSUInteger kMaxTail = 64 * 1024;
+    const NSUInteger kMaxTail = 4 * 1024;   // 只发布末尾 4KB（原 64KB 大字符串写 CFPreferences 在 SpringBoard 里风险高）
     if (size > kMaxTail) [handle seekToFileOffset:size - kMaxTail];
     NSData *tail = [handle readDataToEndOfFile];
     [handle closeFile];
