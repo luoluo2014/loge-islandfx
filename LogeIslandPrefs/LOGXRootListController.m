@@ -39,25 +39,51 @@
 
 - (void)viewDidLoad {
     LOGXStage("prefs-viewDidLoad-enter");
-    LOGXStage("prefs-build-2019");   // 确认设备上跑的是哪一版
+    LOGXStage("prefs-build-2020");   // 确认设备上跑的是哪一版
     [super viewDidLoad];
     self.navigationController.navigationBar.tintColor = kLOGXColor;
+    // 无分割线：insetGrouped 靠分组卡片区分层次。
+    //
+    // 2.0.20 起从 viewWillAppear 移到这里。原先放在 viewWillAppear 里 super 返回
+    // 之后，反汇编证实窗口内只有三次 msgSend：self.tableView → self.view →
+    // setSeparatorStyle:。iOS 17 上 PSListController 的 view 不保证是 UITableView，
+    // 一旦 tableView 返回 nil 就回退到 view，对非 UITableView 发 setSeparatorStyle:
+    // 即 unrecognized selector，未捕获异常直接闪退——stage.log 永远停在
+    // prefs-vwa-super-ok 正是这个原因（此前版本先崩在 super 内的 header 创建，
+    // 被 2.0.19 的 initWithSpecifier: 修掉后才第一次走到这两行）。
+    //
+    // viewDidLoad 的执行路径已被连续多版 stage.log 验证必然可达；且此处加
+    // 类型守卫，任何异常只损失装饰效果，绝不影响页面加载。
+    @try {
+        UITableView *table = self.tableView;
+        if (table == nil) {
+            table = (UITableView *)self.view;
+            LOGXStage("prefs-vdl-table-nil-useview");
+        } else {
+            LOGXStage("prefs-vdl-table-ok");
+        }
+        if ([table isKindOfClass:[UITableView class]]) {
+            table.separatorStyle = UITableViewCellSeparatorStyleNone;
+            LOGXStage("prefs-vdl-sep-set");
+        } else {
+            LOGXStage("prefs-vdl-sep-skip");
+        }
+    } @catch (NSException *exception) {
+        LOGXStage("prefs-vdl-sep-catch");
+    }
     LOGXStage("prefs-viewDidLoad-done");
 }
 
 - (void)viewWillAppear:(BOOL)animated {
     LOGXStage("prefs-viewWillAppear-enter");
-    // 2.0.18 诊断：@try/@catch 包住 super。若崩溃是 ObjC 异常（如 unrecognized
-    // selector），这里能兜住并记录；若是 EXC_BAD_ACCESS 则打点链继续定位。
+    // 2.0.20：本方法只保留 super 调用，不再有任何自定义代码。
+    // 自定义逻辑一律放 viewDidLoad（必然可达）或用 @try/isKindOfClass 包住。
     @try {
         [super viewWillAppear:animated];
-        LOGXStage("prefs-vwa-super-ok");
     } @catch (NSException *exception) {
         LOGXStage("prefs-vwa-super-catch");
     }
-    // MagmaEvo 同款：无分割线，靠分组卡片区分层次
-    UITableView *table = self.tableView ?: self.view;
-    table.separatorStyle = UITableViewCellSeparatorStyleNone;
+    LOGXStage("prefs-vwa-super-ok");
     LOGXStage("prefs-viewWillAppear-done");
 }
 
@@ -68,7 +94,11 @@
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     LOGXStage("ds-rows-enter");
     NSInteger rows = [super tableView:tableView numberOfRowsInSection:section];
-    LOGXStage("ds-rows-exit");
+    // 打出行数：若 6 个 section 全返回 0，说明 PSListController 内部的 _specifiers
+    // 是 nil（ivor 偏移异常），表格空白；非 0 才说明 cell 链路真的会被走到。
+    char buf[64];
+    snprintf(buf, sizeof(buf), "ds-rows-sec=%ld-n=%ld", (long)section, (long)rows);
+    LOGXStage(buf);
     return rows;
 }
 
